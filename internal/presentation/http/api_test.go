@@ -13,6 +13,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	neturl "net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -22,8 +23,10 @@ import (
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/auth"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/dashboard"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/monitoring"
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
 	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/docker"
+	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/filesystem"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/password"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/sqlite"
 	httpapi "github.com/bruno-mesquita/mesquita-panel/internal/presentation/http"
@@ -58,6 +61,7 @@ type client struct {
 	base string
 	http *http.Client
 	csrf string
+	rt   *stubRuntime
 }
 
 func newServer(t *testing.T) *client {
@@ -84,15 +88,18 @@ func newServerWith(t *testing.T, containers monitoring.ContainerCollector) *clie
 		"assets/js/app.js":   {Data: []byte("// app")},
 		"assets/css/app.css": {Data: []byte("body{}")},
 	}
+	rt := newStubRuntime()
+	serversSvc := servers.NewService(sqlite.NewServers(store), rt, filesystem.NewServerDirs(filepath.Join(t.TempDir(), "servers"), os.Getuid(), os.Getgid()),
+		audit, servers.Config{FirstPort: 25601, LastPort: 25700, HostCPUs: 4, PortFree: func(int) bool { return true }})
 	api := httpapi.New(authSvc,
 		monitoring.NewService(stubCollector{}, containers, time.Second),
-		dashboard.NewService(docker.NewClient(filepath.Join(t.TempDir(), "no-docker.sock")), audit),
-		static, log)
+		dashboard.NewService(docker.NewClient(filepath.Join(t.TempDir(), "no-docker.sock")), serversSvc, audit),
+		serversSvc, static, log)
 
 	srv := httptest.NewServer(api.Handler())
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
-	return &client{t: t, base: srv.URL, http: &http.Client{Jar: jar}}
+	return &client{t: t, base: srv.URL, http: &http.Client{Jar: jar}, rt: rt}
 }
 
 // do sends a same-origin request the way a browser would (Sec-Fetch-Site: same-origin).

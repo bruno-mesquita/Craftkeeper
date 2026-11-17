@@ -66,7 +66,7 @@ func (f *fakeDaemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // startFake listens on a short socket path (unix paths are limited to ~108 bytes).
-func startFake(t *testing.T, f *fakeDaemon) string {
+func startFake(t *testing.T, f http.Handler) string {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "mq")
 	if err != nil {

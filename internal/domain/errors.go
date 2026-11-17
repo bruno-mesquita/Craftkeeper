@@ -12,6 +12,11 @@ var (
 	ErrSetupCompleted     = errors.New("setup already completed")
 	ErrSetupTokenInvalid  = errors.New("invalid setup token")
 	ErrDockerUnavailable  = errors.New("docker unavailable")
+	ErrDockerFailed       = errors.New("docker rejected the operation")
+	ErrServerRunning      = errors.New("server is running")
+	ErrContainerMissing   = errors.New("server container is missing")
+	ErrPortInUse          = errors.New("port already in use")
+	ErrNotManaged         = errors.New("container is not managed by this server")
 )
 
 // ValidationError describes which input field is invalid. It wraps ErrInvalidInput.

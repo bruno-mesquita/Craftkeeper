@@ -12,14 +12,18 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/auth"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/dashboard"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/monitoring"
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
 	"github.com/bruno-mesquita/mesquita-panel/internal/config"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/docker"
+	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/filesystem"
+	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/hostnet"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/metrics"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/password"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/sqlite"
@@ -85,9 +89,15 @@ func run() error {
 		return err
 	}
 	monitoringSvc := monitoring.NewService(metrics.NewLinux("/proc", cfg.DataDir), docker.NewStatsCollector(dockerClient, log), metricsCacheTTL)
-	dashboardSvc := dashboard.NewService(dockerClient, auditLog)
+	uid, gid := containerUser(log)
+	serversSvc := servers.NewService(sqlite.NewServers(store), docker.NewRuntime(dockerClient, uid, gid),
+		filesystem.NewServerDirs(cfg.ServersDir(), uid, gid), auditLog, servers.Config{
+			FirstPort: cfg.GamePorts.First, LastPort: cfg.GamePorts.Last,
+			HostCPUs: runtime.NumCPU(), PortFree: hostnet.TCPPortFree,
+		})
+	dashboardSvc := dashboard.NewService(dockerClient, serversSvc, auditLog)
 
-	handler := httpapi.New(authSvc, monitoringSvc, dashboardSvc, web.FS, log).Handler()
+	handler := httpapi.New(authSvc, monitoringSvc, dashboardSvc, serversSvc, web.FS, log).Handler()
 	return serve(ctx, log, cfg.Listen, handler)
 }
 
@@ -143,6 +153,22 @@ func serve(ctx context.Context, log *slog.Logger, addrs []string, handler http.H
 		}
 	}
 	return runErr
+}
+
+// fallbackContainerUID/GID is the unprivileged user of the game image, used when the panel
+// runs as root (development under sudo).
+const fallbackContainerUID, fallbackContainerGID = 1000, 1000
+
+// containerUser is the uid:gid game containers run as: the panel's own user, so server files
+// belong to it. Game containers never run as root: without capabilities the image's root
+// entrypoint cannot drop privileges, and root in a container is needless exposure.
+func containerUser(log *slog.Logger) (uid, gid int) {
+	if os.Getuid() != 0 {
+		return os.Getuid(), os.Getgid()
+	}
+	log.Warn("running as root: game containers run as the image's default user instead; use a dedicated user in production",
+		"uid", fallbackContainerUID, "gid", fallbackContainerGID)
+	return fallbackContainerUID, fallbackContainerGID
 }
 
 func ensureWritableDir(dir string) error {

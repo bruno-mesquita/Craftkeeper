@@ -1,11 +1,12 @@
 // Package docker talks to the Docker Engine API over its Unix socket with plain net/http.
 //
-// Only allowlisted, read-only operations are exposed so far: connectivity checks and
-// container listing/statistics for containers labelled mesquita.managed=true.
-// Container lifecycle operations arrive in Phase 3.
+// Only allowlisted operations are exposed, each as its own method: connectivity checks,
+// listing and statistics of containers labelled mesquita.managed=true (stats.go), and the
+// game server lifecycle (runtime.go). There is no generic passthrough to the Engine API.
 package docker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,24 +14,42 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
+
+	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
 )
 
 // apiVersion pins the Engine API used for versioned endpoints. 1.44 (Docker Engine 25+)
 // supports one-shot stats (added in 1.41); the host runs Engine 29.10 (API 1.57, minimum 1.40).
 const apiVersion = "/v1.44"
 
+// defaultTimeout bounds every call that does not ask for a longer one (stop, pull).
+const defaultTimeout = 5 * time.Second
+
+// maxErrorBytes bounds the error body read from the daemon.
+const maxErrorBytes = 4 << 10
+
 // errTooLarge reports a daemon response above the caller's size limit.
 var errTooLarge = errors.New("response too large")
+
+// apiError is a non-2xx answer from the daemon.
+type apiError struct {
+	status  int
+	message string
+}
+
+func (e *apiError) Error() string { return fmt.Sprintf("docker: status %d: %s", e.status, e.message) }
 
 type Client struct {
 	http *http.Client
 }
 
+// NewClient has no client-wide timeout: each call sets its own deadline, because stopping a
+// game server or pulling an image legitimately takes far longer than a listing.
 func NewClient(socketPath string) *Client {
 	dialer := &net.Dialer{Timeout: 2 * time.Second}
 	return &Client{http: &http.Client{
-		Timeout: 5 * time.Second,
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				return dialer.DialContext(ctx, "unix", socketPath)
@@ -43,6 +62,8 @@ func NewClient(socketPath string) *Client {
 
 // Ping checks that the daemon is reachable and answering (GET /_ping).
 func (c *Client) Ping(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://docker/_ping", nil)
 	if err != nil {
 		return err
@@ -61,25 +82,68 @@ func (c *Client) Ping(ctx context.Context) error {
 
 // getJSON GETs a versioned Engine API path and decodes at most maxBytes of JSON into v.
 func (c *Client) getJSON(ctx context.Context, pathAndQuery string, maxBytes int64, v any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://docker"+apiVersion+pathAndQuery, nil)
+	_, err := c.call(ctx, http.MethodGet, pathAndQuery, nil, defaultTimeout, maxBytes, v)
+	return err
+}
+
+// call sends one request to a versioned Engine API path with the given deadline. in, when
+// not nil, is sent as JSON; a 2xx body is decoded into out (when not nil, at most maxBytes).
+// A non-2xx status becomes *apiError, except 304 Not Modified, which Docker uses for
+// "already started/stopped" and is returned as a status with a nil error.
+// A transport failure wraps domain.ErrDockerUnavailable.
+func (c *Client) call(ctx context.Context, method, pathAndQuery string, in any, timeout time.Duration, maxBytes int64, out any) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	var body io.Reader
+	if in != nil {
+		b, err := json.Marshal(in)
+		if err != nil {
+			return 0, err
+		}
+		body = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, "http://docker"+apiVersion+pathAndQuery, body)
 	if err != nil {
-		return err
+		return 0, err
+	}
+	if in != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return 0, fmt.Errorf("%w: %v", domain.ErrDockerUnavailable, err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("unexpected status %d", resp.StatusCode)
+
+	if resp.StatusCode == http.StatusNotModified {
+		return resp.StatusCode, nil
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return resp.StatusCode, readAPIError(resp)
+	}
+	if out == nil {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxErrorBytes))
+		return resp.StatusCode, nil
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
-		return err
+		return resp.StatusCode, err
 	}
-	if int64(len(body)) > maxBytes {
-		return errTooLarge
+	if int64(len(b)) > maxBytes {
+		return resp.StatusCode, errTooLarge
 	}
-	return json.Unmarshal(body, v)
+	return resp.StatusCode, json.Unmarshal(b, out)
+}
+
+func readAPIError(resp *http.Response) error {
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes))
+	var e struct {
+		Message string `json:"message"`
+	}
+	msg := strings.TrimSpace(string(b))
+	if json.Unmarshal(b, &e) == nil && e.Message != "" {
+		msg = e.Message
+	}
+	return &apiError{status: resp.StatusCode, message: msg}
 }

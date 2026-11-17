@@ -225,6 +225,7 @@ func (a *API) dashboardOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"docker":        map[string]bool{"reachable": o.DockerReachable},
+		"servers":       map[string]int{"total": o.Servers.Total, "running": o.Servers.Running, "stopped": o.Servers.Stopped},
 		"recent_events": events,
 	})
 }

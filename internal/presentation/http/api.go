@@ -9,6 +9,7 @@ import (
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/auth"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/dashboard"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/monitoring"
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
 )
 
 // API wires HTTP routes to application services.
@@ -16,12 +17,13 @@ type API struct {
 	auth       *auth.Service
 	monitoring *monitoring.Service
 	dashboard  *dashboard.Service
+	servers    *servers.Service
 	static     fs.FS
 	log        *slog.Logger
 }
 
-func New(a *auth.Service, m *monitoring.Service, d *dashboard.Service, static fs.FS, log *slog.Logger) *API {
-	return &API{auth: a, monitoring: m, dashboard: d, static: static, log: log}
+func New(a *auth.Service, m *monitoring.Service, d *dashboard.Service, s *servers.Service, static fs.FS, log *slog.Logger) *API {
+	return &API{auth: a, monitoring: m, dashboard: d, servers: s, static: static, log: log}
 }
 
 // Handler returns the complete HTTP handler with middleware applied.
@@ -40,6 +42,16 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/system/stats", a.requireAuth(a.systemStats))
 	mux.HandleFunc("GET /api/v1/system/containers", a.requireAuth(a.containerStats))
 	mux.HandleFunc("GET /api/v1/dashboard", a.requireAuth(a.dashboardOverview))
+
+	mux.HandleFunc("GET /api/v1/servers", a.requireAuth(a.listServers))
+	mux.HandleFunc("POST /api/v1/servers", a.requireAuth(a.createServer))
+	mux.HandleFunc("GET /api/v1/servers/{id}", a.requireAuth(a.withServerID(a.getServer)))
+	mux.HandleFunc("PATCH /api/v1/servers/{id}", a.requireAuth(a.withServerID(a.updateServer)))
+	mux.HandleFunc("DELETE /api/v1/servers/{id}", a.requireAuth(a.withServerID(a.deleteServer)))
+	mux.HandleFunc("POST /api/v1/servers/{id}/start", a.requireAuth(a.withServerID(a.serverAction(a.servers.Start))))
+	mux.HandleFunc("POST /api/v1/servers/{id}/stop", a.requireAuth(a.withServerID(a.serverAction(a.servers.Stop))))
+	mux.HandleFunc("POST /api/v1/servers/{id}/restart", a.requireAuth(a.withServerID(a.serverAction(a.servers.Restart))))
+	mux.HandleFunc("POST /api/v1/servers/{id}/kill", a.requireAuth(a.withServerID(a.serverAction(a.servers.Kill))))
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "unknown API endpoint")

@@ -40,13 +40,14 @@ export function mount(root) {
   const net = metricCard('network', 'Network');
   const updated = h('p', { class: 'text-xs text-muted', 'aria-live': 'off' });
   const docker = h('span', { class: 'badge' }, 'Docker: checking…');
+  const serverCounts = h('a', { class: 'badge hover:bg-surface-hover', href: '#/servers' }, 'Servers: …');
   const events = h('tbody');
   const containers = h('tbody');
 
   root.replaceChildren(
     h('div', { class: 'mb-6 flex flex-wrap items-center justify-between gap-3' },
       h('h1', { class: 'text-xl font-semibold' }, 'Overview'),
-      h('div', { class: 'flex items-center gap-3' }, updated, docker)),
+      h('div', { class: 'flex items-center gap-3' }, updated, serverCounts, docker)),
     h('div', { class: 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4' }, cpu.card, mem.card, disk.card, net.card),
     h('section', { class: 'card mt-6 overflow-x-auto' },
       h('h2', { class: 'mb-3 font-semibold' }, 'Containers'),
@@ -83,7 +84,7 @@ export function mount(root) {
     try {
       const { containers: list } = await api('GET', '/system/containers');
       if (!list.length) {
-        containerMessage('No managed containers yet. Servers arrive in phase 3.');
+        containerMessage('No managed containers yet. Create a server on the Servers page.');
         return;
       }
       containers.replaceChildren(...list.map((c) => {
@@ -106,6 +107,7 @@ export function mount(root) {
       const d = await api('GET', '/dashboard');
       docker.textContent = d.docker.reachable ? 'Docker: connected' : 'Docker: unreachable';
       docker.className = `badge ${d.docker.reachable ? 'text-success' : 'text-warning'}`;
+      serverCounts.textContent = `Servers: ${d.servers.running} running · ${d.servers.stopped} stopped`;
       events.replaceChildren(...(d.recent_events.length
         ? d.recent_events.map((e) => h('tr', { class: 'border-t border-border' },
           h('td', { class: 'py-2 pr-4 whitespace-nowrap tabular-nums' }, dateTime(e.created_at)),

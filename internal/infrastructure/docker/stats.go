@@ -17,6 +17,7 @@ import (
 const (
 	LabelManaged  = "mesquita.managed"
 	LabelServerID = "mesquita.server_id"
+	LabelGame     = "mesquita.game"
 )
 
 const (
@@ -51,7 +52,25 @@ type containerSummary struct {
 	ID     string            `json:"Id"`
 	Names  []string          `json:"Names"`
 	State  string            `json:"State"`
+	Status string            `json:"Status"` // human readable, e.g. "Up 5 minutes (health: starting)"
 	Labels map[string]string `json:"Labels"`
+}
+
+// listManaged lists every container labelled mesquita.managed=true, running or not.
+// The daemon-side filter is never trusted alone: the label and the ID format are re-checked.
+// A failure means Docker is unavailable.
+func (c *Client) listManaged(ctx context.Context) ([]containerSummary, error) {
+	var list []containerSummary
+	if err := c.getJSON(ctx, "/containers/json?"+managedFilter, maxListBytes, &list); err != nil {
+		return nil, fmt.Errorf("%w: list containers: %v", domain.ErrDockerUnavailable, err)
+	}
+	out := list[:0]
+	for _, x := range list {
+		if x.Labels[LabelManaged] == managedLabelValue && validContainerID(x.ID) {
+			out = append(out, x)
+		}
+	}
+	return out, nil
 }
 
 type statsResponse struct {
@@ -94,17 +113,13 @@ func (s *StatsCollector) CollectContainers(ctx context.Context) (domain.Containe
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var list []containerSummary
-	if err := s.client.getJSON(ctx, "/containers/json?"+managedFilter, maxListBytes, &list); err != nil {
-		return domain.ContainerSnapshot{}, fmt.Errorf("%w: list containers: %v", domain.ErrDockerUnavailable, err)
+	list, err := s.client.listManaged(ctx)
+	if err != nil {
+		return domain.ContainerSnapshot{}, err
 	}
 
-	// Never trust the daemon-side filter alone: re-check the label and the ID format.
 	out := make([]domain.ContainerStats, 0, len(list))
 	for _, c := range list {
-		if c.Labels[LabelManaged] != managedLabelValue || !validContainerID(c.ID) {
-			continue
-		}
 		out = append(out, domain.ContainerStats{
 			ID:       c.ID,
 			Name:     containerName(c.Names),

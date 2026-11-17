@@ -21,12 +21,29 @@ uname -m            # must print x86_64
 sudo docker version --format '{{.Server.Version}}'
 ```
 
-Phase 1 works without Docker access; the dashboard simply shows "Docker: unreachable".
+Without Docker access the panel still starts: the dashboard shows "Docker: unreachable"
+and server management is unavailable.
 
-## 3. Check the port
+**Server management needs Docker access.** The service user must be in the `docker` group,
+which is root-equivalent: anyone controlling the panel process controls the host. The panel
+only acts on containers labelled `mesquita.managed=true` with a server ID it knows, but only
+grant this deliberately:
+
+```bash
+sudo usermod -aG docker mesquita-panel
+# and uncomment SupplementaryGroups=docker in the unit (step 7)
+```
+
+After starting, check in the log that `docker is reachable` appears. The unit uses
+`ProtectSystem=strict`; connecting to `/var/run/docker.sock` is not a write to the
+filesystem, so it is expected to work — confirm on first deploy.
+
+## 3. Check the ports
 
 ```bash
 sudo ss -ltnp | grep -E ':8090\b' || echo "8090 free"
+# Game servers use MESQUITA_GAME_PORTS (default 25601-25700); list what is already bound there:
+sudo ss -ltn | awk '{print $4}' | grep -E ':256(0[1-9]|[1-9][0-9])$|:25700$' || echo "game range free"
 ```
 
 If 8090 is taken, choose another free port and use it in step 6.
@@ -107,6 +124,8 @@ Migrations run automatically at startup. Back up first:
 sudo systemctl disable --now mesquita-panel
 sudo rm /etc/systemd/system/mesquita-panel.service && sudo systemctl daemon-reload
 sudo rm -r /opt/mesquita-panel /etc/mesquita-panel   # /var/lib/mesquita-panel holds data: remove deliberately
+# Game server containers keep running (restart policy unless-stopped). List them before deciding:
+sudo docker ps -a --filter label=mesquita.managed=true
 ```
 
 ## Verify Crafty is untouched

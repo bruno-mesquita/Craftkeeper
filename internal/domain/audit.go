@@ -8,6 +8,14 @@ const (
 	AuditLogin           = "auth.login"
 	AuditLogout          = "auth.logout"
 	AuditPasswordChanged = "auth.password_change"
+
+	AuditServerCreate  = "server.create"
+	AuditServerUpdate  = "server.update"
+	AuditServerStart   = "server.start"
+	AuditServerStop    = "server.stop"
+	AuditServerRestart = "server.restart"
+	AuditServerKill    = "server.kill"
+	AuditServerDelete  = "server.delete"
 )
 
 type AuditEvent struct {

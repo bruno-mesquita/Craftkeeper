@@ -83,6 +83,10 @@
   .nav-link[aria-current="page"] {
     @apply bg-surface-hover text-foreground;
   }
+  .dialog {
+    @apply m-auto w-[min(32rem,calc(100%-2rem))] rounded-lg border border-border-strong bg-surface p-6
+      text-foreground shadow-xl backdrop:bg-black/60;
+  }
   .form-error {
     @apply rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger;
   }

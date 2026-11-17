@@ -54,6 +54,18 @@ func writeDomainError(w http.ResponseWriter, log *slog.Logger, err error) {
 	case errors.Is(err, domain.ErrDockerUnavailable):
 		log.Warn("docker unavailable", "err", err)
 		writeError(w, http.StatusServiceUnavailable, "docker_unavailable", "Docker is not reachable")
+	case errors.Is(err, domain.ErrServerRunning):
+		writeError(w, http.StatusConflict, "server_running", "stop the server before changing its limits")
+	case errors.Is(err, domain.ErrContainerMissing):
+		writeError(w, http.StatusConflict, "container_missing", "the server's container no longer exists; delete the server")
+	case errors.Is(err, domain.ErrNotManaged):
+		log.Warn("container ownership check failed", "err", err)
+		writeError(w, http.StatusConflict, "container_not_managed", "the container does not belong to this server")
+	case errors.Is(err, domain.ErrPortInUse):
+		writeError(w, http.StatusConflict, "port_in_use", "the server's port is already in use on the host")
+	case errors.Is(err, domain.ErrDockerFailed):
+		log.Error("docker operation failed", "err", err)
+		writeError(w, http.StatusBadGateway, "docker_error", "Docker rejected the operation; see the panel log")
 	case errors.Is(err, domain.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "resource not found")
 	default:

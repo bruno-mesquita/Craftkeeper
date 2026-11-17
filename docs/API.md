@@ -33,10 +33,16 @@ unless marked *planned*.
 | 403 | `setup_token_invalid` | Wrong setup token |
 | 404 | `not_found` | Unknown endpoint or resource |
 | 409 | `setup_completed` | Setup already done |
+| 409 | `server_running` | Memory/CPU limits can only change while the server is stopped |
+| 409 | `container_missing` | The server's container no longer exists; only deletion works |
+| 409 | `container_not_managed` | The container no longer carries this server's labels; the panel refuses to touch it |
+| 409 | `port_in_use` | The game port is taken on the host when starting |
 | 413 | `payload_too_large` | Body over 64 KiB |
 | 422 | `validation_failed` | Field-level validation error |
 | 429 | `rate_limited` | Too many failed logins; retry after the window |
 | 500 | `internal_error` | Unexpected server error (details only in logs) |
+| 502 | `docker_error` | Docker rejected the operation (details only in logs) |
+| 503 | `docker_unavailable` | The Docker daemon cannot be reached |
 
 ## Objects
 
@@ -118,15 +124,82 @@ Errors: `503 docker_unavailable` when the Docker daemon cannot be reached.
 ```json
 {
   "docker": { "reachable": true },
+  "servers": { "total": 2, "running": 1, "stopped": 1 },
   "recent_events": [
     { "id": 2, "created_at": "...", "action": "auth.login", "target": "admin", "ip": "127.0.0.1", "success": true }
   ]
 }
 ```
-Audit actions: `auth.setup`, `auth.login`, `auth.logout`, `auth.password_change`.
-Server counts are added in phase 3.
+`servers.running` counts running, starting and restarting servers; servers whose container
+is missing, or whose status is unknown, are only in `total`.
+Audit actions: `auth.setup`, `auth.login`, `auth.logout`, `auth.password_change`,
+`server.create`, `server.update`, `server.start`, `server.stop`, `server.restart`,
+`server.kill`, `server.delete` (target: server name).
+
+## Servers
+
+Game servers run in Docker containers labelled `mesquita.managed=true` and
+`mesquita.server_id=<id>`. Before acting on a container the panel checks both labels against
+its database; other containers on the host are never listed or touched.
+
+**Server**
+```json
+{
+  "id": "26 characters [A-Z2-7]", "name": "Survival", "description": "",
+  "game": "minecraft", "loader": "vanilla", "version": "LATEST",
+  "status": "running",
+  "memory_mb": 2048, "cpu_cores": 1.5, "port": 25601,
+  "container_id": "64-char hex", "created_at": "...", "updated_at": "..."
+}
+```
+`status` is read from Docker on every request, never stored:
+`running`, `starting` (running, health check not passed yet), `stopped`, `restarting`,
+`missing` (container gone or no longer labelled for this server), `unknown` (Docker unreachable).
+`cpu_cores` is a number (0.5 = half a core); it is stored with 0.001-core precision.
+
+An `{id}` that is not a valid server ID answers `404 not_found` without any lookup.
+
+### `GET /servers` — auth
+`200 {"servers": [Server]}`, ordered by name. Always an array. When Docker is unreachable the
+list is still returned, with status `unknown`.
+
+### `POST /servers` — auth + CSRF
+Body: `{"name", "description"?, "version"?, "memory_mb", "cpu_cores", "port"?, "accept_eula"}`.
+- `name`: 1–48 printable characters, no surrounding spaces, unique (case-insensitive).
+- `description`: up to 500 characters.
+- `version`: `"LATEST"` (default) or a release such as `"1.21.4"`.
+- `memory_mb`: 512–16384. `cpu_cores`: 0.5 up to the number of host CPUs.
+- `port`: within the configured game port range; omitted or `0` picks the first free one.
+- `accept_eula`: must be `true` (the Minecraft EULA).
+
+Pulls the pinned game image if needed (the first creation can take minutes), creates the data
+directory and a **stopped** container. On failure nothing is left behind.
+`201 Server` · `422` (`field` names the input) · `502 docker_error` · `503 docker_unavailable`.
+
+### `GET /servers/{id}` — auth
+`200 Server` · `404`.
+
+### `PATCH /servers/{id}` — auth + CSRF
+Body: any of `{"name", "description", "memory_mb", "cpu_cores"}`. Name and description can
+change at any time; limits only while the server is stopped. A new memory limit sets the heap
+on the next start.
+`200 Server` · `404` · `409 server_running` · `409 container_missing` · `422`.
+
+### `POST /servers/{id}/start|stop|restart|kill` — auth + CSRF
+`stop` and `restart` ask the game to save and stop, and kill it after 60 s. `kill` stops it
+immediately (unsaved changes are lost). Starting a running server or stopping/killing a
+stopped one is not an error.
+`200 Server` · `404` · `409 container_missing` · `409 container_not_managed` ·
+`409 port_in_use` (start) · `502` · `503`.
+
+### `DELETE /servers/{id}?delete_files=true|false` — auth + CSRF
+Stops the server gracefully, removes its container, then deletes its files
+(`delete_files=true`) or moves them to `servers/.deleted/<id>-<unix time>` (default), and
+removes the record. A container that is already gone, or that no longer carries this server's
+labels, is left alone and only forgotten.
+`204` · `404` · `422` (invalid `delete_files`) · `502` · `503`.
 
 ## Planned
 
-Servers (phase 3), WebSocket `/ws` (phase 4, see `WEBSOCKET.md`), files (phase 5),
+WebSocket `/ws` (phase 4, see `WEBSOCKET.md`), files (phase 5),
 backups (phase 6) — as listed in `docs/SPEC.md` §10.

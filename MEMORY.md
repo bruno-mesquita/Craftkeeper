@@ -49,6 +49,12 @@ Formato: decisão — motivo — consequência.
 - **D16 · Engine API fixa em `/v1.44`** — Docker Engine 25+, já tem stats `one-shot` (≥ 1.41); sem negociação via `/version`. Host: Engine 29.10.0, API 1.57 (mínima 1.40), verificado em 2026-11-17. — Revisar só se um daemon futuro subir a versão mínima acima de 1.44.
 - **D17 · Métricas só de containers `mesquita.managed=true`** (escolha do usuário, 2026-11-17) — spec §11. — Filtro no daemon **e** revalidação da label + formato do ID no cliente. Ainda não cruza `mesquita.server_id` com o banco: não existe tabela `servers` até a Fase 3, que adiciona esse cruzamento antes de qualquer ação.
 - **D18 · Sem histórico de métricas** (escolha do usuário) — só tempo real por polling (3 s) até a Fase 4 trocar por WebSocket; sem goroutine de fundo. CPU/rede de container por delta entre coletas (primeira amostra = 0), mapa de amostras podado a cada coleta.
+- **D19 · Imagem de jogo `itzg/minecraft-server:2026.11.0` (Java 25) pinada por digest** (escolha do usuário, 2026-11-17) — baixa o jar sozinha via `TYPE`/`VERSION`; a Fase 7 vira ampliar a allowlist de loaders. Digest do índice multi-arch `sha256:8d5080d8dcd0a2629c2e4f248678373a337a40537ad6ef2857c7dbcda6e3eadd` (Docker Hub, verificado 2026-11-17). Java 25 e não 21: o Minecraft atual exige 25. Versões antigas (< 1.17) podem precisar de outra tag de Java — tratar na Fase 7. Atualizar = trocar `imageTag`/`imageDigest` em `docker/runtime.go`.
+- **D20 · Portas de jogo `25601–25700` (`MESQUITA_GAME_PORTS`), bind em `0.0.0.0`** (escolha do usuário) — Crafty usa 25500–25600. Porta = pedida ou primeira livre (não usada no banco + `net.Listen` passa); UNIQUE no banco; `port_in_use` no start cobre a corrida.
+- **D21 · Política fixa do container** — roda como uid:gid do painel (arquivos do painel → Fases 5/6); **nunca root**: com o painel como root (`sudo make run`) usa `1000:1000` e a pasta do servidor é `chown`ada para ele (sem capabilities, o entrypoint root do itzg falha no `chown`/troca de usuário e entra em loop de restart — visto em 2026-11-17), `CapDrop ALL`, `no-new-privileges`, swap = 0, PIDs 2048, logs 3 × 10 MB, `unless-stopped`, stop 60 s, `OpenStdin` (console da Fase 4 sem recriar), bridge padrão (sem `docker network`). Heap = `MaxRAMPercentage=75` com `MEMORY=""`: mudar limite + restart já vale. `ENABLE_RCON=false` até a Fase 4.
+- **D22 · Status derivado, nunca persistido** — `running/starting/stopped/restarting/missing/unknown`; um container só conta se ID **e** label `server_id` batem com o banco. Toda operação mutante do `docker.Runtime` faz inspect e confere `mesquita.managed` + `server_id` antes de agir (D17 cumprido).
+- **D23 · Delete opt-in de arquivos** (escolha do usuário) — sem `delete_files=true` a pasta vai para `servers/.deleted/<id>-<unix>`. Remoção/arquivamento via `os.Root`. Container que sumiu ou não é mais nosso é só esquecido, nunca tocado.
+- **D24 · Prazos por chamada no cliente Docker** — sem timeout global; 5 s padrão, stop/restart 75 s, pull 10 min. Handlers longos estendem read+write deadline com `http.ResponseController` (o read deadline vencido cancela o contexto da requisição).
 - **D10 · systemd com usuário dedicado `mesquita-panel`** — princípio do menor privilégio. — Precisa estar no grupo `docker` (root-equivalente) a partir da Fase 3; criação do usuário e grupo exige autorização no deploy.
 
 ---
@@ -72,7 +78,7 @@ Formato: decisão — motivo — consequência.
 | 0 | Planejamento, CLAUDE.md, MEMORY.md, SPEC | ✅ concluída | 2026-11-17 |
 | 1 | Foundation (config, SQLite, HTTP, embed, auth, dashboard inicial, systemd) | ✅ implementada e testada (2026-11-17); UI conferida no navegador; falta deploy systemd | ver medições abaixo |
 | 2 | Monitoring (CPU, RAM, disco, rede, métricas de containers) | ✅ implementada e verificada (2026-11-17) | ver Fase 2 abaixo |
-| 3 | Server management (Docker, criação, ciclo de vida, limites) | planejada | |
+| 3 | Server management (Docker, criação, ciclo de vida, limites) | ✅ implementada, testada e verificada com servidor real (2026-11-17) | ver Fase 3 abaixo |
 | 4 | WebSocket + console | planejada | |
 | 5 | File manager | planejada | |
 | 6 | Backups | planejada | |
@@ -105,13 +111,24 @@ Legenda de detalhe por feature (preencher ao implementar): **implementado** / **
 - **Verificado de verdade (usuário, 2026-11-17):** container `mesquita-test-stats` com label
   `mesquita.managed=true` + `sudo make run` → apareceu na tabela Containers do Overview; Crafty e servidores Minecraft **não** apareceram (filtro por label ok); `make clean` depois.
 
-## Fase 3 — ponto de partida
+## Fase 3 — estado (2026-11-17)
 
-Spec §17: Docker integration, criação de servidor, ciclo de vida (start/stop/restart/kill), limites.
-- Tabela `servers` (migration `0002`), e cruzar `mesquita.server_id` com o banco (D17) antes de qualquer ação.
-- Reusar `docker.Client.getJSON` / labels `LabelManaged` / `LabelServerID` / `validContainerID`; operações mutantes entram na allowlist uma a uma.
-- Componente dialog (ações destrutivas), contagem de servidores no `/dashboard`.
-- Deploy systemd precisa do grupo `docker` (D10) — pedir autorização.
+Plano: `~/.claude/plans/memory-md-fa-a-o-planejamento-elegant-parnas.md`. Decisões D19–D24.
+- **Implementado:** migration `0002_servers`; `domain/server.go` (validações, status);
+  `docker.Runtime` (`runtime.go`: pull por digest, create/start/stop/restart/kill/remove/update,
+  inspect com checagem de posse) + `listManaged` compartilhado com stats; `filesystem.ServerDirs`
+  (`os.Root`); `hostnet.TCPPortFree`; `application/servers` (create com rollback, lifecycle,
+  update, delete, counts); rotas `/api/v1/servers…` (`docs/API.md`); `servers` no `/dashboard`;
+  `MESQUITA_GAME_PORTS`; frontend `pages/servers.js` + `dialog.js` (`<dialog>` nativo);
+  contagem no Overview.
+- **Testes escritos:** `docker/runtime_test.go` (daemon falso), `sqlite/servers_test.go`,
+  `filesystem/servers_test.go` (traversal, symlink), `servers/service_test.go` (rollback,
+  posse, status), `http/servers_test.go` (contrato), config.
+- **Testado:** `sudo make check` passou (gofmt, vet, testes, build; binário 12 MB).
+- **Verificado de verdade (usuário, 2026-11-17):** criar servidor Vanilla `LATEST` → `stopped`; Start → `running` (depois da correção de D21; antes ficava em loop `restarting`).
+- **Verificado de verdade (usuário, 2026-11-17), ciclo completo:** conectar pelo cliente, stop salvando o mundo, restart, kill, editar limites, delete com e sem arquivos; Crafty intacto.
+- **Pendente:** deploy systemd com grupo `docker` (D10, precisa autorização). Página de detalhes do servidor (logs, console, arquivos) começa na Fase 4.
+- **Fora do escopo:** console/logs (4), arquivos (5), backups (6), outros loaders (7).
 
 ## Roadmap — Fase 1 (Foundation, referência)
 

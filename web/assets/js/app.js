@@ -7,7 +7,7 @@ const app = document.getElementById('app');
 // Route table. Page modules are lazy-loaded and must export mount(container, ctx) -> cleanup.
 const routes = {
   overview: { title: 'Overview', load: () => import('./pages/overview.js') },
-  servers: { title: 'Servers', load: () => import('./pages/planned.js'), phase: 3 },
+  servers: { title: 'Servers', load: () => import('./pages/servers.js') },
   backups: { title: 'Backups', load: () => import('./pages/planned.js'), phase: 6 },
   users: { title: 'Users', load: () => import('./pages/planned.js'), phase: null },
   settings: { title: 'Settings', load: () => import('./pages/settings.js') },

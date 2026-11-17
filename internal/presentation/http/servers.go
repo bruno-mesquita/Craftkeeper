@@ -1,0 +1,179 @@
+package httpapi
+
+import (
+	"context"
+	"math"
+	"net/http"
+	"time"
+
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
+	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+)
+
+// Deadlines for requests that wait on slow Docker operations. The server-wide timeouts
+// (main.go) are too short for an image pull or a graceful game stop.
+const (
+	createDeadline = 12 * time.Minute // image pull (10 min) + container creation
+	stopDeadline   = 3 * time.Minute  // graceful stop (60 s) + removal, with margin
+)
+
+type serverDTO struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+	Game        string  `json:"game"`
+	Loader      string  `json:"loader"`
+	Version     string  `json:"version"`
+	Status      string  `json:"status"`
+	MemoryMB    int     `json:"memory_mb"`
+	CPUCores    float64 `json:"cpu_cores"`
+	Port        int     `json:"port"`
+	ContainerID string  `json:"container_id"`
+	CreatedAt   string  `json:"created_at"`
+	UpdatedAt   string  `json:"updated_at"`
+}
+
+func toServerDTO(v servers.View) serverDTO {
+	return serverDTO{
+		ID: v.ID, Name: v.Name, Description: v.Description, Game: v.Game, Loader: v.Loader, Version: v.Version,
+		Status: string(v.Status), MemoryMB: v.MemoryMB, CPUCores: float64(v.CPUMillicores) / 1000, Port: v.Port,
+		ContainerID: v.ContainerID, CreatedAt: rfc3339(v.CreatedAt), UpdatedAt: rfc3339(v.UpdatedAt),
+	}
+}
+
+// millicores converts a JSON core count (e.g. 1.5) to millicores; out-of-range values are
+// left for domain validation to reject.
+func millicores(cores float64) int {
+	if math.IsNaN(cores) || math.IsInf(cores, 0) || cores < 0 || cores > 1e6 {
+		return -1
+	}
+	return int(math.Round(cores * 1000))
+}
+
+func actorOf(r *http.Request) servers.Actor {
+	return servers.Actor{UserID: identityFrom(r.Context()).User.ID, IP: clientIP(r)}
+}
+
+// extendDeadlines lets one request outlive the server-wide read/write timeouts. The read
+// deadline matters too: when it expires, net/http cancels the request context.
+func extendDeadlines(w http.ResponseWriter, d time.Duration) {
+	rc := http.NewResponseController(w)
+	at := time.Now().Add(d)
+	_ = rc.SetReadDeadline(at)
+	_ = rc.SetWriteDeadline(at)
+}
+
+// withServerID rejects IDs the panel could not have generated before any lookup.
+func (a *API) withServerID(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !domain.ValidServerID(r.PathValue("id")) {
+			writeError(w, http.StatusNotFound, "not_found", "resource not found")
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (a *API) listServers(w http.ResponseWriter, r *http.Request) {
+	list, err := a.servers.List(r.Context())
+	if err != nil {
+		writeDomainError(w, a.log, err)
+		return
+	}
+	out := make([]serverDTO, 0, len(list))
+	for _, v := range list {
+		out = append(out, toServerDTO(v))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"servers": out})
+}
+
+func (a *API) createServer(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name        string  `json:"name"`
+		Description string  `json:"description"`
+		Version     string  `json:"version"`
+		MemoryMB    int     `json:"memory_mb"`
+		CPUCores    float64 `json:"cpu_cores"`
+		Port        int     `json:"port"`
+		AcceptEULA  bool    `json:"accept_eula"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.Version == "" {
+		req.Version = "LATEST"
+	}
+	extendDeadlines(w, createDeadline)
+	v, err := a.servers.Create(r.Context(), servers.CreateInput{
+		Name: req.Name, Description: req.Description, Version: req.Version, MemoryMB: req.MemoryMB,
+		CPUMillicores: millicores(req.CPUCores), Port: req.Port, AcceptEULA: req.AcceptEULA,
+	}, actorOf(r))
+	if err != nil {
+		writeDomainError(w, a.log, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, toServerDTO(v))
+}
+
+func (a *API) getServer(w http.ResponseWriter, r *http.Request) {
+	v, err := a.servers.Get(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeDomainError(w, a.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toServerDTO(v))
+}
+
+func (a *API) updateServer(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name        *string  `json:"name"`
+		Description *string  `json:"description"`
+		MemoryMB    *int     `json:"memory_mb"`
+		CPUCores    *float64 `json:"cpu_cores"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	in := servers.UpdateInput{Name: req.Name, Description: req.Description, MemoryMB: req.MemoryMB}
+	if req.CPUCores != nil {
+		m := millicores(*req.CPUCores)
+		in.CPUMillicores = &m
+	}
+	v, err := a.servers.Update(r.Context(), r.PathValue("id"), in, actorOf(r))
+	if err != nil {
+		writeDomainError(w, a.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toServerDTO(v))
+}
+
+func (a *API) deleteServer(w http.ResponseWriter, r *http.Request) {
+	var deleteFiles bool
+	switch r.URL.Query().Get("delete_files") {
+	case "", "false":
+	case "true":
+		deleteFiles = true
+	default:
+		writeDomainError(w, a.log, &domain.ValidationError{Field: "delete_files", Message: `must be "true" or "false"`})
+		return
+	}
+	extendDeadlines(w, stopDeadline)
+	if err := a.servers.Delete(r.Context(), r.PathValue("id"), deleteFiles, actorOf(r)); err != nil {
+		writeDomainError(w, a.log, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// serverAction adapts a lifecycle use case (start, stop, restart, kill) to a handler.
+func (a *API) serverAction(op func(context.Context, string, servers.Actor) (servers.View, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		extendDeadlines(w, stopDeadline)
+		v, err := op(r.Context(), r.PathValue("id"), actorOf(r))
+		if err != nil {
+			writeDomainError(w, a.log, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, toServerDTO(v))
+	}
+}
