@@ -22,7 +22,7 @@ const toastRoot = () => document.getElementById('toasts');
 export function toast(message, kind = 'info') {
   const tone = { info: 'border-border-strong', success: 'border-success/50', error: 'border-danger/50' }[kind];
   const el = h('div', {
-    class: `pointer-events-auto rounded-md border ${tone} bg-surface px-4 py-3 text-sm shadow-lg`,
+    class: `pointer-events-auto animate-[toast-in_0.2s_ease-out] rounded-lg border ${tone} bg-surface px-4 py-3 text-sm shadow-xl`,
     role: kind === 'error' ? 'alert' : 'status',
   }, message);
   toastRoot().append(el);

@@ -1,15 +1,13 @@
-// Centered card layout shared by the setup and login screens.
+// Centered layout shared by the setup and login screens.
 import { h } from '../dom.js';
 
 export function authLayout(title, subtitle, form) {
   return h('div', { class: 'flex min-h-dvh items-center justify-center p-4' },
-    h('main', { class: 'card w-full max-w-sm p-6' },
-      h('div', { class: 'mb-6 flex items-center gap-3' },
-        h('img', { src: '/assets/icons/logo.svg', alt: '', width: '32', height: '32' }),
-        h('div', null,
-          h('h1', { class: 'text-lg font-semibold' }, title),
-          h('p', { class: 'text-muted' }, subtitle))),
-      form));
+    h('main', { class: 'w-full max-w-sm' },
+      h('img', { src: '/assets/icons/logo.svg', alt: '', width: '56', height: '56', class: 'mb-8' }),
+      h('h1', { class: 'text-4xl' }, title),
+      h('p', { class: 'mt-2 mb-8 text-muted' }, subtitle),
+      h('div', { class: 'card' }, form)));
 }
 
 export function submitButton(label) {

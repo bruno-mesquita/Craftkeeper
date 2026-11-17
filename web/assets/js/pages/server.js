@@ -36,7 +36,7 @@ export function mount(root, { param: id }) {
   const sent = []; // command history, newest last
   let cursor = -1; // position while browsing history with ↑/↓
 
-  const title = h('h1', { class: 'text-xl font-semibold' }, 'Loading…');
+  const title = h('h1', null, 'Loading…');
   const status = h('span', { class: 'badge' });
   const meta = h('p', { class: 'text-xs text-muted' });
   const usage = h('p', { class: 'text-xs text-muted tabular-nums' });

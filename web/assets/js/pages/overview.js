@@ -8,13 +8,13 @@ const STATS_INTERVAL_MS = 3000;
 const DASHBOARD_INTERVAL_MS = 30000;
 
 function metricCard(icon, title) {
-  const value = h('p', { class: 'text-2xl font-semibold tabular-nums' }, '—');
+  const value = h('p', { class: 'font-mono text-3xl font-semibold tabular-nums' }, '—');
   const detail = h('p', { class: 'text-xs text-muted tabular-nums' }, ' ');
   // Width is set through CSSOM (allowed by the CSP), never via a style attribute.
   const bar = h('span', { class: 'w-0' });
   const meter = h('div', { class: 'meter', role: 'progressbar', 'aria-label': title, 'aria-valuemin': '0', 'aria-valuemax': '100' }, bar);
   const card = h('section', { class: 'card flex flex-col gap-3' },
-    h('div', { class: 'flex items-center gap-2 text-muted' }, h('span', { html: icons[icon] }), h('h2', { class: 'text-sm font-medium' }, title)),
+    h('div', { class: 'flex items-center gap-2 text-muted' }, h('span', { html: icons[icon] }), h('h2', { class: 'text-sm font-semibold' }, title)),
     value, meter, detail);
   return {
     card,
@@ -46,7 +46,7 @@ export function mount(root) {
 
   root.replaceChildren(
     h('div', { class: 'mb-6 flex flex-wrap items-center justify-between gap-3' },
-      h('h1', { class: 'text-xl font-semibold' }, 'Overview'),
+      h('h1', null, 'Overview'),
       h('div', { class: 'flex items-center gap-3' }, updated, serverCounts, docker)),
     h('div', { class: 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4' }, cpu.card, mem.card, disk.card, net.card),
     h('section', { class: 'card mt-6 overflow-x-auto' },

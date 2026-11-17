@@ -23,7 +23,7 @@ export function mount(root) {
 
   root.replaceChildren(
     h('div', { class: 'mb-6 flex flex-wrap items-center justify-between gap-3' },
-      h('h1', { class: 'text-xl font-semibold' }, 'Servers'),
+      h('h1', null, 'Servers'),
       h('button', { class: 'btn btn-primary', type: 'button', onclick: () => createDialog() }, 'New server')),
     notice,
     h('section', { class: 'card overflow-x-auto' },
