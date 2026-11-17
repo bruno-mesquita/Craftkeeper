@@ -28,6 +28,10 @@ var (
 	ErrInvalidArchive      = errors.New("invalid archive")
 	ErrArchiveTooLarge     = errors.New("archive too large")
 	ErrInsufficientStorage = errors.New("insufficient storage")
+
+	ErrBackupInProgress = errors.New("a backup or restore of this server is in progress")
+	ErrBackupNotReady   = errors.New("backup is not ready")
+	ErrServerBusy       = errors.New("server is starting or restarting")
 )
 
 // ValidationError describes which input field is invalid. It wraps ErrInvalidInput.

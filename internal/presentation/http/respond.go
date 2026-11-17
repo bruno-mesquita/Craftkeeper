@@ -57,7 +57,7 @@ func writeDomainError(w http.ResponseWriter, log *slog.Logger, err error) {
 	case errors.Is(err, domain.ErrServerNotRunning):
 		writeError(w, http.StatusConflict, "server_not_running", "the server is not running")
 	case errors.Is(err, domain.ErrServerRunning):
-		writeError(w, http.StatusConflict, "server_running", "stop the server before changing its limits")
+		writeError(w, http.StatusConflict, "server_running", "stop the server first")
 	case errors.Is(err, domain.ErrContainerMissing):
 		writeError(w, http.StatusConflict, "container_missing", "the server's container no longer exists; delete the server")
 	case errors.Is(err, domain.ErrNotManaged):
@@ -88,6 +88,12 @@ func writeDomainError(w http.ResponseWriter, log *slog.Logger, err error) {
 	case errors.Is(err, domain.ErrInsufficientStorage):
 		log.Warn("disk full", "err", err)
 		writeError(w, http.StatusInsufficientStorage, "insufficient_storage", "not enough disk space")
+	case errors.Is(err, domain.ErrBackupInProgress):
+		writeError(w, http.StatusConflict, "backup_in_progress", "a backup or restore of this server is in progress")
+	case errors.Is(err, domain.ErrBackupNotReady):
+		writeError(w, http.StatusConflict, "backup_not_ready", "the backup is not ready")
+	case errors.Is(err, domain.ErrServerBusy):
+		writeError(w, http.StatusConflict, "server_busy", "the server is starting or restarting; try again shortly")
 	case errors.Is(err, domain.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "resource not found")
 	default:

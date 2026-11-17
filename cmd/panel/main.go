@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/auth"
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/backups"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/console"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/dashboard"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/files"
@@ -95,12 +96,13 @@ func run() error {
 	uid, gid := containerUser(log)
 	containers := docker.NewRuntime(dockerClient, uid, gid)
 	serversSvc := servers.NewService(sqlite.NewServers(store), containers,
-		filesystem.NewServerDirs(cfg.ServersDir(), uid, gid), auditLog, servers.Config{
+		filesystem.NewServerDirs(cfg.ServersDir(), cfg.BackupsDir(), uid, gid), auditLog, servers.Config{
 			FirstPort: cfg.GamePorts.First, LastPort: cfg.GamePorts.Last,
 			HostCPUs: runtime.NumCPU(), PortFree: hostnet.TCPPortFree,
 		})
 	dashboardSvc := dashboard.NewService(dockerClient, serversSvc, auditLog)
-	filesSvc := files.NewService(filesystem.NewServerFiles(cfg.ServersDir(), uid, gid), serversSvc, auditLog)
+	serverFiles := filesystem.NewServerFiles(cfg.ServersDir(), uid, gid)
+	filesSvc := files.NewService(serverFiles, serversSvc, auditLog)
 
 	// The console's event loop lives as long as the process; its feeds as long as viewers.
 	consoleSvc := console.NewService(containers, dockerClient, serversSvc, auditLog, log)
@@ -116,7 +118,24 @@ func run() error {
 	}()
 	hub := wspres.NewHub(authSvc, consoleSvc, log)
 
-	handler := httpapi.New(authSvc, monitoringSvc, dashboardSvc, serversSvc, filesSvc, hub, web.FS, log).Handler()
+	// Backups pause a running game's saving through the console, so they end before it.
+	backupsSvc := backups.NewService(sqlite.NewBackups(store), filesystem.NewBackups(cfg.BackupsDir(), serverFiles),
+		serversSvc, consoleSvc, auditLog, log)
+	if err := backupsSvc.Recover(ctx); err != nil {
+		return err
+	}
+	schedulerDone := make(chan struct{})
+	go func() {
+		defer close(schedulerDone)
+		backupsSvc.Run(ctx)
+	}()
+	defer func() {
+		stop()
+		<-schedulerDone
+		backupsSvc.Close()
+	}()
+
+	handler := httpapi.New(authSvc, monitoringSvc, dashboardSvc, serversSvc, filesSvc, backupsSvc, hub, web.FS, log).Handler()
 	return serve(ctx, log, cfg.Listen, handler, hub)
 }
 

@@ -26,6 +26,13 @@ const (
 	AuditFileRename  = "file.rename"
 	AuditFileDelete  = "file.delete"
 	AuditFileExtract = "file.extract"
+
+	// Backup actions target "<server name>: <backup id>" (schedule: the server name).
+	// Scheduled backups are recorded without a user.
+	AuditBackupCreate   = "backup.create"
+	AuditBackupRestore  = "backup.restore"
+	AuditBackupDelete   = "backup.delete"
+	AuditBackupSchedule = "backup.schedule_update"
 )
 
 type AuditEvent struct {

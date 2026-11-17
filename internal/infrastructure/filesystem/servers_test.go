@@ -10,8 +10,9 @@ import (
 const id = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 func TestServerDirsLifecycle(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "servers")
-	d := NewServerDirs(root, os.Getuid(), os.Getgid())
+	tmp := t.TempDir()
+	root, backups := filepath.Join(tmp, "servers"), filepath.Join(tmp, "backups")
+	d := NewServerDirs(root, backups, os.Getuid(), os.Getgid())
 	d.now = func() time.Time { return time.Unix(100, 0) }
 
 	path, err := d.Create(id)
@@ -24,11 +25,21 @@ func TestServerDirsLifecycle(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(path, "level.dat"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	backup := filepath.Join(backups, id, "B.zip")
+	if err := os.MkdirAll(filepath.Dir(backup), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(backup, []byte("zip"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := d.Archive(id); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(root, ".deleted", id+"-100", "level.dat")); err != nil {
 		t.Fatalf("archived file: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(backups, ".deleted", id+"-100", "B.zip")); err != nil {
+		t.Fatalf("archived backup: %v", err)
 	}
 	if err := d.Archive(id); err != nil {
 		t.Fatalf("archiving a missing directory: %v", err)
@@ -37,11 +48,16 @@ func TestServerDirsLifecycle(t *testing.T) {
 	if _, err := d.Create(id); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Dir(backup), 0o750); err != nil {
+		t.Fatal(err)
+	}
 	if err := d.Remove(id); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("after Remove: %v", err)
+	for _, p := range []string{path, filepath.Dir(backup)} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("after Remove, %s: %v", p, err)
+		}
 	}
 	if err := d.Remove(id); err != nil {
 		t.Fatalf("removing a missing directory: %v", err)
@@ -49,7 +65,7 @@ func TestServerDirsLifecycle(t *testing.T) {
 }
 
 func TestServerDirsRejectInvalidIDs(t *testing.T) {
-	d := NewServerDirs(t.TempDir(), os.Getuid(), os.Getgid())
+	d := NewServerDirs(t.TempDir(), t.TempDir(), os.Getuid(), os.Getgid())
 	for _, bad := range []string{"", "..", "../etc", "abcdefghijklmnopqrstuvwxyz", id + "/x"} {
 		if _, err := d.Create(bad); err == nil {
 			t.Errorf("Create(%q) succeeded", bad)
@@ -74,7 +90,7 @@ func TestServerDirsRemoveDoesNotFollowSymlinks(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(root, id)); err != nil {
 		t.Fatal(err)
 	}
-	if err := NewServerDirs(root, os.Getuid(), os.Getgid()).Remove(id); err != nil {
+	if err := NewServerDirs(root, t.TempDir(), os.Getuid(), os.Getgid()).Remove(id); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(keep); err != nil {

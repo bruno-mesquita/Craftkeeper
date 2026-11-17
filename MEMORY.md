@@ -68,6 +68,13 @@ Formato: decisão — motivo — consequência.
 - **D34 · Deadlines por progresso** — download/zip/upload estendem o deadline a cada chunk (60 s parado derruba); erro depois de começar o stream aborta a conexão (`http.ErrAbortHandler`) em vez de entregar arquivo truncado.
 - **D35 · Versão para edição concorrente** = inode + mtime ns + tamanho (o mtime do kernel é grosseiro; cada escrita atômica troca o inode). `PUT content` com versão diferente → `409 file_changed`. Escrita no lugar com mesmo tamanho no mesmo tique não é detectável (raro; aceito).
 - Escrita de arquivos permitida com o servidor rodando (escolha do usuário); a UI avisa.
+- **D36 · Backup = zip da pasta inteira, reaproveitando a Fase 5** — `writeZip`/`extractZip` (núcleos extraídos de `zip.go`) já são endurecidos. Entradas sem prefixo; `flate.BestSpeed` (região do Minecraft já é zlib); pula symlinks e `.mesquita-tmp-*`; arquivo removido durante o walk é ignorado. Arquivos em `<data>/backups/<server_id>/<backup_id>.zip`, dono = usuário do painel, fora do file manager.
+- **D37 · Criação assíncrona** — `POST` → `202 creating`; job em goroutine do `backups.Service` (ctx próprio, `WaitGroup`, semáforo global de 1 archive por vez). UI faz polling de 3 s só enquanto há `creating` e a aba está visível. `Recover` no start (antes de servir): `creating` → `failed/interrupted`, remove `.mesquita-tmp-*` e `servers/.restore-*`.
+- **D38 · Backup online** (escolha do usuário) — `running`: inscreve no console, `save-off` → `save-all flush` → espera `Saved the game` com timestamp **posterior** ao envio (feed novo reenvia o tail como linhas novas!) até 60 s → zip → `save-on` sempre (defer registrado antes do `save-off`). `stopped`/`missing`: direto; se o servidor ligar durante o zip, falha `server_busy` e o arquivo é apagado. `starting`/`restarting` → `409 server_busy`. Aviso no chat (escolha do usuário, fixo, em inglês): `tellraw @a` cinza no início e no fim (sucesso/falha), depois do `save-on`; falha ao enviar só vai para o log. Verificado com servidor real (2026-11-17).
+- **D39 · Reserva de disco de 2 GiB** — host é produção. Backup exige livre − 2 GiB ≥ tamanho dos arquivos (rechecado ao sair da fila); restore descomprime no máximo livre − 2 GiB (`ErrArchiveTooLarge` vira `insufficient_storage`).
+- **D40 · Restore síncrono em duas fases** — exige `stopped`/`missing`; extrai em `servers/.restore-<id>-<rand>` (uid:gid do container), reconfere o status e troca: atual → `servers/.deleted/<id>-<unix>-pre-restore` (escolha do usuário), staging → `<id>`. Ligou no meio → descarta, `409`. Cancelar a requisição descarta (nada muda). Modos viram 0640/0750.
+- **D41 · Um create/restore por servidor** (`409 backup_in_progress`); delete recusa backup `creating` ou restore em andamento. `ServerDirs.Remove/Archive` cuidam também de `backups/<id>` (mesma política D23). Servidor apagado durante um job: linha some por cascade, job apaga o arquivo órfão.
+- **D42 · Agendamento por intervalo + retenção** (escolha do usuário) — `interval_hours` 0–720, `retain` 0–100 (0 = todos), só backups agendados (manuais nunca são apagados sozinhos; agendados `failed` são limpos após um sucesso). `backups.Service.Run`: ticker 1 min; ocupado → tenta no próximo tick; outra recusa → grava backup agendado `failed` (aparece na lista) e espera um intervalo; mantém a cadência (`next += interval`), após downtime roda uma vez e segue de agora. Mudar só `retain` mantém o próximo horário.
 - **D10 · systemd com usuário dedicado `mesquita-panel`** — princípio do menor privilégio. — Precisa estar no grupo `docker` (root-equivalente) a partir da Fase 3; criação do usuário e grupo exige autorização no deploy.
 
 ---
@@ -94,7 +101,7 @@ Formato: decisão — motivo — consequência.
 | 3 | Server management (Docker, criação, ciclo de vida, limites) | ✅ implementada, testada e verificada com servidor real (2026-11-17) | ver Fase 3 abaixo |
 | 4 | WebSocket + console | ✅ implementada, testada e verificada com servidor real (2026-11-17) | ver Fase 4 abaixo |
 | 5 | File manager | ✅ implementada, testada e verificada com servidor real (2026-11-17) | ver Fase 5 abaixo |
-| 6 | Backups | planejada | |
+| 6 | Backups | ✅ implementada, testada e verificada com servidor real (2026-11-17) | ver Fase 6 abaixo |
 | 7 | Game installers (Vanilla, Paper, Purpur, Fabric, Forge, NeoForge) | planejada | |
 
 Legenda de detalhe por feature (preencher ao implementar): **implementado** / **testado** / **planejado**.
@@ -179,6 +186,29 @@ Plano: `~/.claude/plans/fa-a-o-planejamento-da-encapsulated-church.md`. Decisõe
   upload, download de pasta como `.zip`, renomear/criar/apagar, `?path=../..` → 422). A
   extração falhou num zip real com `§` em nome CP437 → corrigido com `cp437.go` e
   re-verificado.
+
+## Fase 6 — estado (2026-11-17)
+
+Plano: `~/.claude/plans/fa-a-o-planejamento-da-crystalline-taco.md`. Decisões D36–D42.
+- **Implementado:** migration `0003_backups` (`backups`, `backup_schedules`, cascade);
+  `domain/backup.go` (+ erros `backup_in_progress`, `backup_not_ready`, `server_busy`, auditoria
+  `backup.*`); `sqlite/backups.go`; `filesystem/zip.go` refatorado (`writeZip`, `extractZip`
+  com ctx e limites) + `filesystem/backups.go` (Write, Open, Remove, Usage, Stage/Commit/
+  DiscardRestore, CleanupStale); `ServerDirs` com raiz de backups; `application/backups`
+  (online via console, fila, retenção, agendador, Recover/Close); `presentation/http/backups.go`
+  (7 rotas); `main.go` (Recover antes de servir; Close antes do console); frontend
+  `backup-manager.js` + aba Backups em `pages/server.js`; `make css`; `docs/API.md`,
+  `docs/CONFIGURATION.md`, README. Mensagem de `server_running` virou genérica.
+- **Testado:** `sudo make check` passou (gofmt, vet, testes, build; binário 13,2 MB). Testes: `filesystem/backups_test.go`,
+  `sqlite/backups_test.go`, `application/backups/service_test.go` (sequência save-off/flush/
+  save-on, linha antiga ignorada, timeout, falha com save-on, exclusão, start durante backup,
+  Close → interrupted, restore + corrida, retenção, agendador, Recover), `http/backups_test.go`
+  (contrato completo), `ServerDirs` com backups.
+- **Risco nos testes HTTP:** usam o disco real do container de teste — precisam de > 2 GiB
+  livres no `/tmp` dele (reserva D39).
+- **Verificado de verdade (usuário, 2026-11-17):** roteiro real completo funcionou (backup online com o console
+  mostrando save-off/Saved the game/save-on, download, restore, Start durante restore → 409,
+  agendamento, apagar servidor com/sem arquivos). Ainda não medido: RSS/CPU durante backup.
 
 ## Roadmap — Fase 1 (Foundation, referência)
 

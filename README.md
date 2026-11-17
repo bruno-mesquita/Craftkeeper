@@ -9,7 +9,9 @@ Pterodactyl, built for one Ubuntu host first.
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Foundation: config, SQLite + migrations, auth (setup, login, sessions, CSRF, rate limit, password change, audit), HTTP server, embedded UI, host metrics, systemd | implemented, tested (not yet deployed) |
-| 2–7 | Monitoring, servers, WebSocket console, files, backups, installers | planned |
+| 2–5 | Monitoring, server management, WebSocket console, file manager | implemented, tested |
+| 6 | Backups (online, download, restore, schedule + retention) | implemented, tested |
+| 7 | Game installers | planned |
 
 Details: [`MEMORY.md`](MEMORY.md). Full specification: [`docs/SPEC.md`](docs/SPEC.md).
 

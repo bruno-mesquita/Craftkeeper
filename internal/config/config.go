@@ -90,6 +90,9 @@ func (c Config) DatabasePath() string { return filepath.Join(c.DataDir, "databas
 // ServersDir holds one data directory per game server.
 func (c Config) ServersDir() string { return filepath.Join(c.DataDir, "servers") }
 
+// BackupsDir holds the backup archives, one directory per game server.
+func (c Config) BackupsDir() string { return filepath.Join(c.DataDir, "backups") }
+
 // parsePortRange parses "first-last" (or a single port) within 1024–65535.
 func parsePortRange(s string) (PortRange, error) {
 	a, b, found := strings.Cut(s, "-")

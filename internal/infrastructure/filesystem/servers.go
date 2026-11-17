@@ -15,18 +15,20 @@ import (
 
 const deletedDir = ".deleted"
 
-// ServerDirs manages one directory per server under root (<data dir>/servers). Removal and
-// archiving go through os.Root, so they cannot leave root even through symlinks.
+// ServerDirs manages the storage of each server: its data directory under root
+// (<data dir>/servers) and its backups under backups (<data dir>/backups). Removal and
+// archiving go through os.Root, so they cannot leave those directories even through symlinks.
 type ServerDirs struct {
 	root     string
+	backups  string
 	uid, gid int // owner of each server directory: the user the game container runs as
 	now      func() time.Time
 }
 
 // NewServerDirs creates server directories owned by uid:gid, the user the game containers
 // run as (it must be able to write its /data).
-func NewServerDirs(root string, uid, gid int) *ServerDirs {
-	return &ServerDirs{root: root, uid: uid, gid: gid, now: time.Now}
+func NewServerDirs(root, backups string, uid, gid int) *ServerDirs {
+	return &ServerDirs{root: root, backups: backups, uid: uid, gid: gid, now: time.Now}
 }
 
 // Create makes the data directory of a server, owned by the container user, and returns its
@@ -50,32 +52,42 @@ func (d *ServerDirs) Create(id string) (string, error) {
 	return path, nil
 }
 
-// Remove deletes a server's data directory. A missing directory is not an error.
+// Remove deletes a server's data directory and its backups. Missing ones are not an error.
 func (d *ServerDirs) Remove(id string) error {
-	return d.withRoot(id, func(r *os.Root) error {
-		return r.RemoveAll(id)
-	})
-}
-
-// Archive moves a server's data directory to .deleted/<id>-<unix time>, out of the way of
-// live servers but recoverable by hand. A missing directory is not an error.
-func (d *ServerDirs) Archive(id string) error {
-	return d.withRoot(id, func(r *os.Root) error {
-		if _, err := r.Lstat(id); errors.Is(err, fs.ErrNotExist) {
-			return nil
-		}
-		if err := r.Mkdir(deletedDir, 0o750); err != nil && !errors.Is(err, fs.ErrExist) {
+	for _, root := range []string{d.root, d.backups} {
+		if err := d.withRoot(root, id, func(r *os.Root) error { return r.RemoveAll(id) }); err != nil {
 			return err
 		}
-		return r.Rename(id, filepath.Join(deletedDir, id+"-"+strconv.FormatInt(d.now().Unix(), 10)))
-	})
+	}
+	return nil
 }
 
-func (d *ServerDirs) withRoot(id string, fn func(*os.Root) error) error {
+// Archive moves a server's data directory and its backups to .deleted/<id>-<unix time> in
+// their respective roots, out of the way but recoverable by hand. Missing ones are skipped.
+func (d *ServerDirs) Archive(id string) error {
+	stamp := id + "-" + strconv.FormatInt(d.now().Unix(), 10)
+	for _, root := range []string{d.root, d.backups} {
+		err := d.withRoot(root, id, func(r *os.Root) error {
+			if _, err := r.Lstat(id); errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			if err := r.Mkdir(deletedDir, 0o750); err != nil && !errors.Is(err, fs.ErrExist) {
+				return err
+			}
+			return r.Rename(id, filepath.Join(deletedDir, stamp))
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *ServerDirs) withRoot(root, id string, fn func(*os.Root) error) error {
 	if !domain.ValidServerID(id) {
 		return fmt.Errorf("filesystem: invalid server id %q", id)
 	}
-	r, err := os.OpenRoot(d.root)
+	r, err := os.OpenRoot(root)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}

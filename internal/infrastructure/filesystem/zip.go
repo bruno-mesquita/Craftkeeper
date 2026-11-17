@@ -2,6 +2,8 @@ package filesystem
 
 import (
 	"archive/zip"
+	"compress/flate"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -32,24 +34,52 @@ func (s *ServerFiles) WriteZip(id, dir string, w io.Writer) error {
 	if dir == "" {
 		prefix = "server"
 	}
+	return writeZip(r.FS(), dir, prefix, w, false)
+}
 
-	fsys := r.FS()
+// writeZip streams directory dir of fsys to w as a zip archive, entry names prefixed with
+// prefix ("" for none). Only directories and regular files are archived, never the panel's
+// own temporary files. fast trades compression ratio for CPU.
+func writeZip(fsys fs.FS, dir, prefix string, w io.Writer, fast bool) error {
 	zw := zip.NewWriter(w)
-	err = fs.WalkDir(fsys, name(dir), func(p string, d fs.DirEntry, err error) error {
+	if fast {
+		zw.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) {
+			return flate.NewWriter(w, flate.BestSpeed)
+		})
+	}
+	err := fs.WalkDir(fsys, name(dir), func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
+			if p != name(dir) && errors.Is(err, fs.ErrNotExist) {
+				return nil // removed while archiving (e.g. a rotated log)
+			}
 			return err
 		}
 		entry := path.Join(prefix, relativeTo(dir, p))
 		switch {
+		case entry == "":
+			return nil // the root itself, without a prefix
+		case strings.HasPrefix(d.Name(), tempPrefix):
+			return nil
 		case d.IsDir():
 			_, err := zw.Create(entry + "/")
 			return err
 		case !d.Type().IsRegular():
 			return nil // symlinks and special files are never archived
 		}
-		info, err := d.Info()
+		f, err := fsys.Open(p)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
 		if err != nil {
 			return err
+		}
+		defer f.Close()
+		info, err := f.Stat()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return nil
 		}
 		hdr, err := zip.FileInfoHeader(info)
 		if err != nil {
@@ -60,11 +90,6 @@ func (s *ServerFiles) WriteZip(id, dir string, w io.Writer) error {
 		if err != nil {
 			return err
 		}
-		f, err := fsys.Open(p)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
 		_, err = io.Copy(dst, f)
 		return err
 	})
@@ -124,7 +149,20 @@ func (s *ServerFiles) Extract(id, archive, dest string, overwrite bool) (int, er
 	if err != nil {
 		return 0, fmt.Errorf("%w: %v", domain.ErrInvalidArchive, err)
 	}
-	if len(zr.File) > domain.ExtractEntriesMax {
+	return s.extractZip(context.Background(), r, zr, dest, overwrite,
+		extractLimits{entries: domain.ExtractEntriesMax, bytes: domain.ExtractMaxBytes})
+}
+
+// extractLimits bound an extraction: entries in the archive and bytes really decompressed.
+type extractLimits struct {
+	entries int
+	bytes   int64
+}
+
+// extractZip unpacks zr into directory dest of r (see Extract). ctx is checked between
+// entries.
+func (s *ServerFiles) extractZip(ctx context.Context, r *os.Root, zr *zip.Reader, dest string, overwrite bool, lim extractLimits) (int, error) {
+	if len(zr.File) > lim.entries {
 		return 0, fmt.Errorf("%w: %d entries", domain.ErrArchiveTooLarge, len(zr.File))
 	}
 
@@ -162,14 +200,17 @@ func (s *ServerFiles) Extract(id, archive, dest string, overwrite bool) (int, er
 			return 0, fmt.Errorf("%w: %s", domain.ErrFileExists, target)
 		}
 		declared += zf.UncompressedSize64
-		if declared > domain.ExtractMaxBytes {
-			return 0, fmt.Errorf("%w: more than %d bytes", domain.ErrArchiveTooLarge, int64(domain.ExtractMaxBytes))
+		if declared > uint64(lim.bytes) {
+			return 0, fmt.Errorf("%w: more than %d bytes", domain.ErrArchiveTooLarge, lim.bytes)
 		}
 		entries = append(entries, e)
 	}
 
-	budget := int64(domain.ExtractMaxBytes)
+	budget := lim.bytes
 	for _, e := range entries {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
 		if e.dir {
 			if err := s.mkdirAll(r, e.path); err != nil {
 				return 0, err

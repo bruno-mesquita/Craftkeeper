@@ -1,9 +1,10 @@
 // Server page: header with live status and lifecycle actions, then tabs: the live console
-// (WebSocket channel server:<id>, docs/WEBSOCKET.md) and the file manager. Usage is polled
-// over REST.
+// (WebSocket channel server:<id>, docs/WEBSOCKET.md), the file manager and backups. Usage is
+// polled over REST.
 import { api, ApiError } from '../api.js';
 import { h, toast } from '../dom.js';
 import { bytes, percent } from '../format.js';
+import { mountBackupManager } from '../backup-manager.js';
 import { mountFileManager } from '../file-manager.js';
 import { ACTIONS, ACTIVE, STATUS, confirmAction, lifecycleActions, runAction } from '../server-actions.js';
 import * as ws from '../ws.js';
@@ -61,12 +62,15 @@ export function mount(root, { param: id }) {
     form);
   const filesPanel = h('section', { class: 'card', id: 'panel-files', role: 'tabpanel', 'aria-labelledby': 'tab-files', hidden: true });
   let files = null; // file manager, mounted on first use
+  const backupsPanel = h('section', { class: 'card', id: 'panel-backups', role: 'tabpanel', 'aria-labelledby': 'tab-backups', hidden: true });
+  let backups = null; // backup manager, mounted on first use
 
   const tabButtons = {
     console: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-console', 'aria-controls': 'panel-console' }, 'Console'),
     files: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-files', 'aria-controls': 'panel-files' }, 'Files'),
+    backups: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-backups', 'aria-controls': 'panel-backups' }, 'Backups'),
   };
-  const panels = { console: consolePanel, files: filesPanel };
+  const panels = { console: consolePanel, files: filesPanel, backups: backupsPanel };
 
   function showTab(name) {
     for (const [n, b] of Object.entries(tabButtons)) {
@@ -80,6 +84,14 @@ export function mount(root, { param: id }) {
     if (name === 'files' && !files) {
       files = mountFileManager(filesPanel, { id });
       files.setRunning(Boolean(server && ACTIVE.has(server.status)));
+    }
+    if (name === 'backups') {
+      if (!backups) {
+        backups = mountBackupManager(backupsPanel, { id, onRestored: () => files?.refresh() });
+        backups.setRunning(Boolean(server && ACTIVE.has(server.status)));
+      } else {
+        backups.refresh(); // resumes polling, which stops while the tab is hidden
+      }
     }
   }
   for (const [n, b] of Object.entries(tabButtons)) b.addEventListener('click', () => showTab(n));
@@ -104,7 +116,8 @@ export function mount(root, { param: id }) {
     notice,
     tablist,
     consolePanel,
-    filesPanel);
+    filesPanel,
+    backupsPanel);
   showTab('console');
 
   // --- header -------------------------------------------------------------------------
@@ -122,6 +135,7 @@ export function mount(root, { param: id }) {
         ACTIONS[a].label)));
     renderInput();
     files?.setRunning(ACTIVE.has(server.status));
+    backups?.setRunning(ACTIVE.has(server.status));
   }
 
   async function act(action) {
@@ -149,6 +163,7 @@ export function mount(root, { param: id }) {
         tablist.hidden = true;
         consolePanel.hidden = true;
         filesPanel.hidden = true;
+        backupsPanel.hidden = true;
         return;
       }
       notice.hidden = false;
@@ -288,6 +303,7 @@ export function mount(root, { param: id }) {
     document.removeEventListener('visibilitychange', onVisibility);
     offState();
     unsubscribe();
+    backups?.destroy();
     document.querySelectorAll('dialog.dialog').forEach((d) => d.close());
   };
 }

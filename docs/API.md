@@ -33,7 +33,10 @@ unless marked *planned*.
 | 403 | `setup_token_invalid` | Wrong setup token |
 | 404 | `not_found` | Unknown endpoint or resource |
 | 409 | `setup_completed` | Setup already done |
-| 409 | `server_running` | Memory/CPU limits can only change while the server is stopped |
+| 409 | `server_running` | The server must be stopped (memory/CPU limits, restore) |
+| 409 | `server_busy` | The server is starting or restarting; retry shortly |
+| 409 | `backup_in_progress` | A backup or restore of this server is in progress |
+| 409 | `backup_not_ready` | The backup is still being made, or failed |
 | 409 | `container_missing` | The server's container no longer exists; only deletion works |
 | 409 | `container_not_managed` | The container no longer carries this server's labels; the panel refuses to touch it |
 | 409 | `port_in_use` | The game port is taken on the host when starting |
@@ -193,9 +196,9 @@ stopped one is not an error.
 `409 port_in_use` (start) · `502` · `503`.
 
 ### `DELETE /servers/{id}?delete_files=true|false` — auth + CSRF
-Stops the server gracefully, removes its container, then deletes its files
-(`delete_files=true`) or moves them to `servers/.deleted/<id>-<unix time>` (default), and
-removes the record. A container that is already gone, or that no longer carries this server's
+Stops the server gracefully, removes its container, then deletes its files and backups
+(`delete_files=true`) or moves them to `servers/.deleted/<id>-<unix time>` and
+`backups/.deleted/<id>-<unix time>` (default), and removes the record. A container that is already gone, or that no longer carries this server's
 labels, is left alone and only forgotten.
 `204` · `404` · `422` (invalid `delete_files`) · `502` · `503`.
 
@@ -278,6 +281,93 @@ written.
 Deletes a file, a symlink (never its target) or a directory with everything inside. The root
 cannot be deleted (`422`). `204`.
 
+## Backups
+
+A backup is a zip archive of the server's whole directory (directories and regular files;
+symlinks and the panel's temporary files are skipped), stored in
+`<data dir>/backups/<server id>/<backup id>.zip`, outside the file manager's reach. Backups
+live on the same disk as the server: download them to keep a copy elsewhere.
+
+- **Running server:** the panel sends `save-off` and `save-all flush` to the game console and
+  waits (up to 60 s) for the game's `Saved the game`; the archive is written with saving
+  paused and `save-on` is always sent afterwards. Players are told in the chat (gray
+  `tellraw @a`): `[Backup] Starting server backup...`, then `[Backup] Backup complete.` or
+  `[Backup] Backup failed; automatic saving is back on.`; a message that cannot be sent never
+  fails the backup. These commands appear in the audit log as `server.console_command`.
+- **Stopped server** (or its container is missing): archived directly. If the server is
+  started during the backup, the backup fails (`server_busy`).
+- A starting or restarting server answers `409 server_busy`; without Docker, `503`.
+- One backup or restore per server at a time (`409 backup_in_progress`), and one archive is
+  written at a time across all servers (others wait as `creating`).
+- Disk reserve: a backup is refused (`507 insufficient_storage`) unless the free space minus
+  2 GiB is at least the size of the server's files; a restore may decompress at most the free
+  space minus 2 GiB.
+
+Audit: `backup.create`, `backup.restore`, `backup.delete`, `backup.schedule_update` (target
+`<server name>: <backup id>`, or the server name for the schedule). Scheduled backups and
+retention are recorded without a user.
+
+**Backup**
+```json
+{"id": "string", "kind": "manual", "status": "ready", "size_bytes": 123456, "failure": "",
+ "created_at": "2026-11-17T12:00:00Z", "completed_at": "2026-11-17T12:01:30Z"}
+```
+`kind`: `manual` or `scheduled`. `status`: `creating` (queued or being written; `size_bytes`
+0, `completed_at` null), `ready`, or `failed` (no archive). `failure`, set when failed:
+`interrupted` (the panel stopped meanwhile), `save_timeout` (the game did not confirm its
+save), `server_busy`, `insufficient_storage`, `docker_unavailable` or `error` (details in the
+panel log).
+
+**BackupSchedule**
+```json
+{"interval_hours": 24, "retain": 7, "next_run_at": "2026-11-18T12:00:00Z"}
+```
+`interval_hours`: 0 (off) to 720. `retain`: how many scheduled backups to keep, 0 (all) to
+100; after each successful scheduled backup the older scheduled ones beyond `retain` and all
+failed scheduled ones are deleted. Manual backups are never deleted automatically.
+`next_run_at` is null while off. A due backup of a busy server (another backup, a restore,
+starting) is retried every minute; any other refusal (e.g. no disk space) is stored as a failed
+scheduled backup and the next run is one interval later. After the panel was down for longer
+than an interval, one backup runs at startup.
+
+Errors common to these endpoints: `404 not_found` (server or backup) · `503 docker_unavailable`.
+
+### `GET /servers/{id}/backups` — auth
+`200 {"backups": [Backup]}`, newest first.
+
+### `POST /servers/{id}/backups` — auth + CSRF
+Starts a manual backup. No body. Answers at once with `202 Backup` (`status: creating`); poll
+the list until it is `ready` or `failed`.
+`409 server_busy` · `409 backup_in_progress` · `507 insufficient_storage`.
+
+### `GET /servers/{id}/backups/{backupID}/download` — auth
+The archive as `application/zip` with `Content-Length` and
+`Content-Disposition: attachment; filename=<server name>-<YYYYMMDD-HHMMSS>.zip` (UTC). An
+error after the transfer started aborts the connection. `409 backup_not_ready`.
+
+### `POST /servers/{id}/backups/{backupID}/restore` — auth + CSRF
+Replaces the server's files with the backup; the server must be stopped. The backup is first
+extracted next to the server; only then the current directory is moved to
+`servers/.deleted/<id>-<unix time>-pre-restore` (recoverable by hand) and the restored one put
+in its place, so a failure or a cancelled request leaves the server as it was. If the server
+was started during the extraction, nothing is replaced (`409 server_running`). Restored files
+belong to the game container's user, with modes 0640/0750. Can take minutes (no response
+until done; the request may run up to 30 min).
+`204` · `409 server_running` · `409 backup_not_ready` · `409 backup_in_progress` ·
+`422 invalid_archive` · `507 insufficient_storage`.
+
+### `DELETE /servers/{id}/backups/{backupID}` — auth + CSRF
+Deletes the backup and its archive. `204` · `409 backup_in_progress` (being made, or a restore
+of this server is running).
+
+### `GET /servers/{id}/backups/schedule` — auth
+`200 BackupSchedule` (off for a server that never had one).
+
+### `PUT /servers/{id}/backups/schedule` — auth + CSRF
+Body `{"interval_hours", "retain"}` (both required). The next run is one interval from now;
+when only `retain` changes, the planned run is kept.
+`200 BackupSchedule` · `422 validation_failed` (`interval_hours`, `retain`).
+
 ## WebSocket
 
 ### `GET /ws` — auth
@@ -285,7 +375,3 @@ Live console and server status. Protocol, messages, limits and close codes:
 [`WEBSOCKET.md`](WEBSOCKET.md). Handshake errors: `400 bad_handshake` ·
 `401 unauthenticated` · `403 origin_not_allowed` · `429 too_many_connections` ·
 `503 shutting_down`.
-
-## Planned
-
-Backups (phase 6) — as listed in `docs/SPEC.md` §10.

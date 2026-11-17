@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/auth"
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/backups"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/dashboard"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/files"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/monitoring"
@@ -21,14 +22,15 @@ type API struct {
 	dashboard  *dashboard.Service
 	servers    *servers.Service
 	files      *files.Service
+	backups    *backups.Service
 	ws         *wspres.Hub
 	static     fs.FS
 	log        *slog.Logger
 }
 
 func New(a *auth.Service, m *monitoring.Service, d *dashboard.Service, s *servers.Service, f *files.Service,
-	ws *wspres.Hub, static fs.FS, log *slog.Logger) *API {
-	return &API{auth: a, monitoring: m, dashboard: d, servers: s, files: f, ws: ws, static: static, log: log}
+	b *backups.Service, ws *wspres.Hub, static fs.FS, log *slog.Logger) *API {
+	return &API{auth: a, monitoring: m, dashboard: d, servers: s, files: f, backups: b, ws: ws, static: static, log: log}
 }
 
 // Handler returns the complete HTTP handler with middleware applied.
@@ -68,6 +70,15 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/servers/{id}/files/directory", fileRoute(a.makeDirectory))
 	mux.HandleFunc("POST /api/v1/servers/{id}/files/rename", fileRoute(a.renameFile))
 	mux.HandleFunc("POST /api/v1/servers/{id}/files/extract", fileRoute(a.extractArchive))
+
+	backupRoute := func(h http.HandlerFunc) http.HandlerFunc { return fileRoute(withBackupID(h)) }
+	mux.HandleFunc("GET /api/v1/servers/{id}/backups", fileRoute(a.listBackups))
+	mux.HandleFunc("POST /api/v1/servers/{id}/backups", fileRoute(a.createBackup))
+	mux.HandleFunc("GET /api/v1/servers/{id}/backups/schedule", fileRoute(a.getBackupSchedule))
+	mux.HandleFunc("PUT /api/v1/servers/{id}/backups/schedule", fileRoute(a.updateBackupSchedule))
+	mux.HandleFunc("GET /api/v1/servers/{id}/backups/{backupID}/download", backupRoute(a.downloadBackup))
+	mux.HandleFunc("POST /api/v1/servers/{id}/backups/{backupID}/restore", backupRoute(a.restoreBackup))
+	mux.HandleFunc("DELETE /api/v1/servers/{id}/backups/{backupID}", backupRoute(a.deleteBackup))
 
 	mux.HandleFunc("GET /api/v1/ws", a.requireAuth(a.websocket))
 

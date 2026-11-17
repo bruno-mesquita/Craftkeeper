@@ -171,7 +171,7 @@ func newEnv(t *testing.T) *env {
 	e := &env{rt: newFakeRuntime(), repo: sqlite.NewServers(store), dir: filepath.Join(tmp, "servers"),
 		busy: map[int]bool{}, actor: Actor{UserID: "U", IP: "127.0.0.1"},
 		auditDB: sqlite.NewAuditLog(store, slog.New(slog.NewTextHandler(io.Discard, nil)))}
-	e.svc = NewService(e.repo, e.rt, filesystem.NewServerDirs(e.dir, os.Getuid(), os.Getgid()), e.auditDB,
+	e.svc = NewService(e.repo, e.rt, filesystem.NewServerDirs(e.dir, filepath.Join(tmp, "backups"), os.Getuid(), os.Getgid()), e.auditDB,
 		Config{FirstPort: 25601, LastPort: 25603, HostCPUs: 4, PortFree: func(p int) bool { return !e.busy[p] }})
 	return e
 }
