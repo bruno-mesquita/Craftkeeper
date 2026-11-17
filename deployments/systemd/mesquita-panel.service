@@ -1,0 +1,51 @@
+[Unit]
+Description=Mesquita Panel (game server management)
+Documentation=file:///opt/mesquita-panel/INSTALL.md
+# The Tailscale address must exist before binding to it.
+After=network-online.target tailscaled.service docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mesquita-panel
+Group=mesquita-panel
+# Phase 3+ (container management) needs the docker group, which is root-equivalent.
+# Uncomment only after it has been explicitly authorized:
+#SupplementaryGroups=docker
+EnvironmentFile=/etc/mesquita-panel/config.env
+ExecStart=/opt/mesquita-panel/mesquita-panel
+Restart=on-failure
+RestartSec=5s
+
+# /var/lib/mesquita-panel, created and owned by the service user.
+StateDirectory=mesquita-panel
+StateDirectoryMode=0750
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+# Not denying @resources: the Go runtime raises RLIMIT_NOFILE (setrlimit) at startup.
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

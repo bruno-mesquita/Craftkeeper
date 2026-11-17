@@ -1,0 +1,89 @@
+/*
+ * Tailwind CSS v4 source. Compiled by the pinned standalone CLI (`make css`) into
+ * web/assets/css/app.css, which is committed and embedded. Never edit the output by hand.
+ */
+@import "tailwindcss" source("../");
+
+@theme {
+  --color-background: #09090b;
+  --color-surface: #18181b;
+  --color-surface-hover: #27272a;
+  --color-border: #27272a;
+  --color-border-strong: #3f3f46;
+  --color-foreground: #fafafa;
+  --color-muted: #a1a1aa;
+
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground font-sans text-sm antialiased;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-primary;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-lg border border-border bg-surface p-4;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium
+      transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply bg-primary text-white hover:bg-primary-hover;
+  }
+  .btn-ghost {
+    @apply text-muted hover:bg-surface-hover hover:text-foreground;
+  }
+  .btn-danger {
+    @apply bg-danger text-white hover:bg-danger/90;
+  }
+  .field {
+    @apply flex flex-col gap-1.5;
+  }
+  .label {
+    @apply text-xs font-medium text-muted;
+  }
+  .input {
+    @apply w-full rounded-md border border-border-strong bg-background px-3 py-2 text-sm text-foreground
+      placeholder:text-muted/60 focus-visible:border-primary focus-visible:outline-none;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-xs font-medium;
+  }
+  .meter {
+    @apply h-1.5 w-full overflow-hidden rounded-full bg-surface-hover;
+  }
+  .meter > span {
+    @apply block h-full rounded-full bg-primary transition-[width] duration-500;
+  }
+  .nav-link {
+    @apply flex items-center gap-3 rounded-md px-3 py-2 text-muted hover:bg-surface-hover hover:text-foreground;
+  }
+  .nav-link[aria-current="page"] {
+    @apply bg-surface-hover text-foreground;
+  }
+  .form-error {
+    @apply rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger;
+  }
+}

@@ -1,0 +1,116 @@
+# Installation (Ubuntu, systemd)
+
+Production does **not** need Go, Node or any build tool: only the static binary.
+Every step runs with `sudo` and must not touch Crafty, its containers, networks or ports.
+
+## 0. Build (development side)
+
+```bash
+make build          # -> bin/mesquita-panel (linux/amd64, static, CGO disabled)
+```
+
+## 1. Check the architecture
+
+```bash
+uname -m            # must print x86_64
+```
+
+## 2. Check Docker (read-only)
+
+```bash
+sudo docker version --format '{{.Server.Version}}'
+```
+
+Phase 1 works without Docker access; the dashboard simply shows "Docker: unreachable".
+
+## 3. Check the port
+
+```bash
+sudo ss -ltnp | grep -E ':8090\b' || echo "8090 free"
+```
+
+If 8090 is taken, choose another free port and use it in step 6.
+
+## 4. Create the service user and directories
+
+```bash
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin mesquita-panel
+sudo install -d -m 0755 /opt/mesquita-panel
+sudo install -d -m 0750 -o root -g mesquita-panel /etc/mesquita-panel
+# /var/lib/mesquita-panel is created by systemd (StateDirectory=).
+```
+
+## 5. Install the binary
+
+```bash
+sudo install -m 0755 bin/mesquita-panel /opt/mesquita-panel/mesquita-panel
+```
+
+(From another machine: `scp bin/mesquita-panel mesquita-server:/tmp/` first.)
+
+## 6. Configure
+
+```bash
+sudo install -m 0640 -o root -g mesquita-panel deployments/config.env.example /etc/mesquita-panel/config.env
+sudoedit /etc/mesquita-panel/config.env
+```
+
+See `CONFIGURATION.md`. Keep the panel on `127.0.0.1` and the Tailscale IP only.
+
+## 7. Install the systemd unit
+
+```bash
+sudo install -m 0644 deployments/systemd/mesquita-panel.service /etc/systemd/system/
+sudo systemctl daemon-reload
+```
+
+## 8. Start
+
+```bash
+sudo systemctl enable --now mesquita-panel
+systemctl status mesquita-panel
+curl -s http://127.0.0.1:8090/api/v1/health     # {"status":"ok"}
+```
+
+## 9. Logs
+
+```bash
+journalctl -u mesquita-panel -f
+```
+
+## 10. Initial administrator setup
+
+While no administrator exists, every start logs a **one-time setup token**:
+
+```bash
+journalctl -u mesquita-panel | grep setup_token
+```
+
+Open `http://100.126.54.17:8090` (Tailscale) or tunnel with
+`ssh -L 8090:127.0.0.1:8090 mesquita-server`, enter the token, and create the administrator.
+After that the setup endpoint is permanently closed. There is no default password.
+
+## Upgrade
+
+```bash
+sudo install -m 0755 bin/mesquita-panel /opt/mesquita-panel/mesquita-panel
+sudo systemctl restart mesquita-panel
+```
+
+Migrations run automatically at startup. Back up first:
+`sudo sqlite3 /var/lib/mesquita-panel/database.sqlite ".backup /root/panel-$(date +%F).sqlite"`
+(or stop the service and copy the directory).
+
+## Uninstall
+
+```bash
+sudo systemctl disable --now mesquita-panel
+sudo rm /etc/systemd/system/mesquita-panel.service && sudo systemctl daemon-reload
+sudo rm -r /opt/mesquita-panel /etc/mesquita-panel   # /var/lib/mesquita-panel holds data: remove deliberately
+```
+
+## Verify Crafty is untouched
+
+```bash
+sudo docker ps --format '{{.Names}}\t{{.Status}}'
+```

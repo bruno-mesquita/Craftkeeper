@@ -1,0 +1,114 @@
+// Dashboard: live host metrics (polled; moves to WebSocket in phase 4) and recent events.
+import { api } from '../api.js';
+import { h } from '../dom.js';
+import { bytes, dateTime, percent, rate } from '../format.js';
+import { icons } from '../icons.js';
+
+const STATS_INTERVAL_MS = 3000;
+const DASHBOARD_INTERVAL_MS = 30000;
+
+function metricCard(icon, title) {
+  const value = h('p', { class: 'text-2xl font-semibold tabular-nums' }, '—');
+  const detail = h('p', { class: 'text-xs text-muted tabular-nums' }, ' ');
+  // Width is set through CSSOM (allowed by the CSP), never via a style attribute.
+  const bar = h('span', { class: 'w-0' });
+  const meter = h('div', { class: 'meter', role: 'progressbar', 'aria-label': title, 'aria-valuemin': '0', 'aria-valuemax': '100' }, bar);
+  const card = h('section', { class: 'card flex flex-col gap-3' },
+    h('div', { class: 'flex items-center gap-2 text-muted' }, h('span', { html: icons[icon] }), h('h2', { class: 'text-sm font-medium' }, title)),
+    value, meter, detail);
+  return {
+    card,
+    set(v, d, pct) {
+      value.textContent = v;
+      detail.textContent = d;
+      if (pct == null) {
+        meter.hidden = true;
+        return;
+      }
+      bar.style.width = `${pct}%`;
+      bar.classList.toggle('bg-danger', pct >= 90);
+      bar.classList.toggle('bg-warning', pct >= 75 && pct < 90);
+      meter.setAttribute('aria-valuenow', pct.toFixed(0));
+    },
+  };
+}
+
+export function mount(root) {
+  const cpu = metricCard('cpu', 'CPU');
+  const mem = metricCard('memory', 'Memory');
+  const disk = metricCard('disk', 'Disk');
+  const net = metricCard('network', 'Network');
+  const updated = h('p', { class: 'text-xs text-muted', 'aria-live': 'off' });
+  const docker = h('span', { class: 'badge' }, 'Docker: checking…');
+  const events = h('tbody');
+
+  root.replaceChildren(
+    h('div', { class: 'mb-6 flex flex-wrap items-center justify-between gap-3' },
+      h('h1', { class: 'text-xl font-semibold' }, 'Overview'),
+      h('div', { class: 'flex items-center gap-3' }, updated, docker)),
+    h('div', { class: 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4' }, cpu.card, mem.card, disk.card, net.card),
+    h('section', { class: 'card mt-6' },
+      h('h2', { class: 'mb-3 font-semibold' }, 'Servers'),
+      h('p', { class: 'text-muted' }, 'Server management arrives in phase 3.')),
+    h('section', { class: 'card mt-6 overflow-x-auto' },
+      h('h2', { class: 'mb-3 font-semibold' }, 'Recent events'),
+      h('table', { class: 'w-full text-left' },
+        h('thead', { class: 'text-xs text-muted' },
+          h('tr', null, ['Time', 'Action', 'Target', 'IP', 'Result'].map((c) => h('th', { class: 'pb-2 font-medium', scope: 'col' }, c)))),
+        events)));
+
+  async function refreshStats() {
+    try {
+      const s = await api('GET', '/system/stats');
+      cpu.set(percent(s.cpu.usage_percent), `${s.cpu.cores} threads`, s.cpu.usage_percent);
+      const memPct = (100 * s.memory.used_bytes) / s.memory.total_bytes;
+      mem.set(percent(memPct), `${bytes(s.memory.used_bytes)} of ${bytes(s.memory.total_bytes)}`, memPct);
+      const diskPct = (100 * s.disk.used_bytes) / s.disk.total_bytes;
+      disk.set(percent(diskPct), `${bytes(s.disk.free_bytes)} free of ${bytes(s.disk.total_bytes)}`, diskPct);
+      net.set(`↓ ${rate(s.network.rx_bytes_per_second)}`, `↑ ${rate(s.network.tx_bytes_per_second)}`, null);
+      updated.textContent = `Updated ${new Date(s.collected_at).toLocaleTimeString()}`;
+    } catch (err) {
+      updated.textContent = `Metrics unavailable: ${err.message}`;
+    }
+  }
+
+  async function refreshDashboard() {
+    try {
+      const d = await api('GET', '/dashboard');
+      docker.textContent = d.docker.reachable ? 'Docker: connected' : 'Docker: unreachable';
+      docker.className = `badge ${d.docker.reachable ? 'text-success' : 'text-warning'}`;
+      events.replaceChildren(...(d.recent_events.length
+        ? d.recent_events.map((e) => h('tr', { class: 'border-t border-border' },
+          h('td', { class: 'py-2 pr-4 whitespace-nowrap tabular-nums' }, dateTime(e.created_at)),
+          h('td', { class: 'py-2 pr-4 font-mono text-xs' }, e.action),
+          h('td', { class: 'py-2 pr-4' }, e.target),
+          h('td', { class: 'py-2 pr-4 font-mono text-xs text-muted' }, e.ip),
+          h('td', { class: `py-2 ${e.success ? 'text-success' : 'text-danger'}` }, e.success ? 'OK' : 'Failed')))
+        : [h('tr', null, h('td', { class: 'py-2 text-muted', colspan: '5' }, 'No events yet.'))]));
+    } catch {
+      docker.textContent = 'Docker: unknown';
+    }
+  }
+
+  // Poll only while the tab is visible to keep idle cost near zero.
+  let timers = [];
+  const start = () => {
+    stop();
+    refreshStats();
+    refreshDashboard();
+    timers = [setInterval(refreshStats, STATS_INTERVAL_MS), setInterval(refreshDashboard, DASHBOARD_INTERVAL_MS)];
+  };
+  const stop = () => {
+    timers.forEach(clearInterval);
+    timers = [];
+  };
+  const onVisibility = () => (document.hidden ? stop() : start());
+
+  document.addEventListener('visibilitychange', onVisibility);
+  if (!document.hidden) start();
+
+  return () => {
+    stop();
+    document.removeEventListener('visibilitychange', onVisibility);
+  };
+}
