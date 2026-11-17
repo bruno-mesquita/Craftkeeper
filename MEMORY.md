@@ -32,7 +32,7 @@ O repositório está **no próprio servidor de produção**.
 
 Formato: decisão — motivo — consequência.
 
-- **D1 · Build em container Go pinado** — Go ausente no host e spec proíbe instalá-lo sem autorização. — `Makefile` usa `sudo docker run --rm -u $(id -u):$(id -g) golang:1.27.4-trixie`; caches em `.cache/` (gitignored) para não gerar arquivos de root; usuário digita a senha do sudo.
+- **D1 · Build em container Go pinado** — Go ausente no host e spec proíbe instalá-lo sem autorização. — Usuário roda `sudo make check` num terminal próprio (sudo não funciona dentro do Claude Code); o Makefile usa `SUDO_UID/SUDO_GID` para o container rodar como o usuário real (sem arquivos de root), caches em `.cache/`, saída em `.cache/last-run.log` (Claude lê esse arquivo).
 - **D2 · Porta padrão 8090, bind em `127.0.0.1` e `100.126.54.17`** — 8080 já está ocupada; painel não deve ser público. — `MESQUITA_LISTEN` aceita lista de endereços; nunca `0.0.0.0` por padrão.
 - **D3 · Tailwind v4 via CLI standalone oficial, só em dev** — v4 não publica CSS precompilado com todas as utilities; `@tailwindcss/browser` não é recomendado em produção. — Binário pinado com SHA-256 em `tools/` (gitignored), `make css` gera `web/assets/css/app.css` commitado e embutido. Produção sem build, sem Node.
 - **D4 · SQLite com `modernc.org/sqlite`** — pure Go, permite `CGO_ENABLED=0`. — WAL + `busy_timeout`; um pool de escrita com 1 conexão e pool de leitura separado para não bloquear a aplicação.
@@ -40,7 +40,7 @@ Formato: decisão — motivo — consequência.
 - **D6 · WebSocket: `gorilla/websocket` atrás de adapter próprio** — spec exige lib externa + manager próprio. — Só `internal/infrastructure/websocket` importa gorilla; manager/roteamento são nossos.
 - **D7 · Roteamento com `http.ServeMux` (padrões Go 1.22+)** — stdlib já cobre método + path params. — Sem chi/gorilla/mux.
 - **D8 · Pacotes organizados por camada, não por feature** — a árvore da spec §16 mistura `internal/{domain,application,…}` com `internal/{auth,servers,…}`, o que duplicaria responsabilidades. — Features viram subpacotes dentro de cada camada (ex.: `internal/application/auth`).
-- **D9 · Sessões no SQLite** — token aleatório de 32 bytes no cookie; armazenado só o hash SHA-256; expiração absoluta + por inatividade. Cookie `HttpOnly; SameSite=Strict; Secure` sob TLS. CSRF por token sincronizado com a sessão enviado em header `X-CSRF-Token`.
+- **D9 · Sessões no SQLite** — token aleatório de 128 bits (`crypto/rand.Text()`) no cookie; armazenado só o hash SHA-256; expiração absoluta + por inatividade. Cookie `HttpOnly; SameSite=Strict; Secure` sob TLS. CSRF por token sincronizado com a sessão enviado em header `X-CSRF-Token`.
 - **D11 · Token de setup de uso único** — sem ele, qualquer um na tailnet poderia criar o admin primeiro. — Gerado em memória a cada start enquanto não há admin, impresso no log (`journalctl`); `POST /api/v1/setup` exige o token.
 - **D12 · CSRF em duas camadas** — `http.CrossOriginProtection` (stdlib, Sec-Fetch-Site/Origin) em toda a API cobre login/setup; `X-CSRF-Token` por sessão em todo método mutante autenticado.
 - **D13 · Argon2id m=19 MiB, t=2, p=1 + semáforo de 2 hashes** — mínimo OWASP, pico de RAM baixo; verify lê parâmetros do hash armazenado e recusa parâmetros absurdos.
@@ -56,7 +56,8 @@ Formato: decisão — motivo — consequência.
 - [x] Versões pinadas: Go `golang:1.27.4-trixie`, Tailwind CLI v4.3.5 (SHA-256 no Makefile), `modernc.org/sqlite` v1.61.1, `golang.org/x/crypto` v0.58.0.
 - [x] `make` instalado. Fluxo: usuário roda `sudo make check` num terminal próprio; Claude lê `.cache/last-run.log`.
 - [ ] Cookie `Secure` exige HTTPS: avaliar `tailscale serve` para TLS no acesso remoto.
-- [x] `git init` feito (branch `main`); módulo `github.com/bruno-mesquita/mesquita-panel`. Falta `git config user.name/email` antes do primeiro commit.
+- [x] Git: branch `main`, módulo `github.com/bruno-mesquita/mesquita-panel`, identidade configurada. Commit `9ac97e6` (Fase 1) **só local** — não fazer push sem o usuário pedir (ele ainda vai instalar o `gh`).
+- [ ] `.data/` local contém um banco de teste (usuário `bruno`, senha `senha-de-teste-123`) — rodar `make clean` antes de testar a UI de verdade.
 - [ ] Confirmar o que ocupa 8080 (provável stack de mídia), só para documentação.
 
 ---
@@ -86,6 +87,24 @@ Legenda de detalhe por feature (preencher ao implementar): **implementado** / **
 - Memória: ~53 MB RSS depois de um login (o Argon2id aloca 19 MiB, que o heap do Go retém); 12 threads. Se incomodar, avaliar `GOMEMLIMIT` / `debug.FreeOSMemory` — medir antes.
 - **Não verificado:** UI no navegador (renderização, navegação por teclado, contraste). Fazer com o painel em `make run` + túnel SSH.
 - **Não feito:** deploy no systemd (seguir `docs/INSTALL.md`, precisa sudo e autorização).
+- **Desvios do roadmap:** sem middleware de request id; componente dialog não criado (não havia uso — criar quando aparecer ação destrutiva, Fase 3).
+
+## Fase 2 — ponto de partida (próxima sessão)
+
+Escopo da spec §17: CPU, RAM, disco, rede (✅ já existem desde a Fase 1 em `/api/v1/system/stats`)
+**+ métricas de containers Docker** (o que falta de fato).
+
+**Decisões a perguntar ao usuário antes de codar:**
+1. **Quais containers mostrar?** Só os `mesquita.managed=true` (spec §11; hoje não existe nenhum — só nascem na Fase 3) **ou** visão somente-leitura de todos (incluindo Crafty/Minecraft)? Ler stats não altera nada, mas a spec diz para nunca assumir que um container é nosso. Recomendação: só gerenciados + filtro por label, e testar com um container de teste criado pelo usuário com label `mesquita.managed=true` e nome `mesquita-test-*`.
+2. **Acesso ao Docker em dev:** o binário rodando como `bruno-mesquita` não alcança o `docker.sock`. Opções: testes com socket Docker falso (`httptest` sobre unix socket) — sempre — e verificação real rodada pelo usuário (`sudo make run` roda o painel como root: aceitável só para teste local, ou rodar via systemd com `SupplementaryGroups=docker`, que é root-equivalente e exige autorização).
+3. **Histórico/sparklines?** A spec não pede persistência de séries; manter só tempo real (polling até a Fase 4 trocar por WebSocket) salvo pedido do usuário.
+
+**Notas técnicas para a implementação:**
+- Docker stats: `GET /containers/{id}/stats?stream=false&one-shot=true` (API ≥ 1.41) evita a espera de ~1–2 s por container do `stream=false` sozinho; CPU% = delta `cpu_usage.total_usage` / delta `system_cpu_usage` × `online_cpus` × 100 (precisa de duas amostras — mesmo padrão de delta do coletor Linux).
+- Listar com `GET /containers/json?filters={"label":["mesquita.managed=true"]}`; negociar versão via `GET /version` ou fixar uma versão mínima de API no path (`/v1.41/...`).
+- Concorrência limitada ao coletar N containers (semáforo pequeno), cache curto como no `monitoring.Service`.
+- Novo port no `application/monitoring` (ex.: `ContainerStatsReader`) implementado em `infrastructure/docker`; contrato novo documentado em `docs/API.md` + teste de contrato.
+- Opcional e barato: discos adicionais / rede por interface — só se o usuário quiser.
 
 ## Roadmap — Fase 1 (Foundation, referência)
 
