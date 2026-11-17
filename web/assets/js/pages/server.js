@@ -175,9 +175,10 @@ export function mount(root, { param: id }) {
     try {
       const { containers } = await api('GET', '/system/containers');
       const u = containers.find((c) => c.server_id === id);
-      usage.textContent = u && u.state === 'running'
+      const live = u && u.state === 'running'
         ? `CPU ${percent(u.cpu_percent)} · RAM ${bytes(u.memory.used_bytes)} of ${bytes(u.memory.limit_bytes)}`
         : '';
+      usage.textContent = u ? [`Container ${u.name}`, live].filter(Boolean).join(' · ') : '';
     } catch {
       usage.textContent = '';
     }

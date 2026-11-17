@@ -50,10 +50,10 @@ export function mount(root) {
       h('div', { class: 'flex items-center gap-3' }, updated, serverCounts, docker)),
     h('div', { class: 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4' }, cpu.card, mem.card, disk.card, net.card),
     h('section', { class: 'card mt-6 overflow-x-auto' },
-      h('h2', { class: 'mb-3 font-semibold' }, 'Containers'),
+      h('h2', { class: 'mb-3 font-semibold' }, 'Servers'),
       h('table', { class: 'w-full text-left' },
         h('thead', { class: 'text-xs text-muted' },
-          h('tr', null, ['Name', 'State', 'CPU', 'Memory', 'Network'].map((c) => h('th', { class: 'pb-2 font-medium', scope: 'col' }, c)))),
+          h('tr', null, ['Server', 'State', 'CPU', 'Memory', 'Network'].map((c) => h('th', { class: 'pb-2 font-medium', scope: 'col' }, c)))),
         containers)),
     h('section', { class: 'card mt-6 overflow-x-auto' },
       h('h2', { class: 'mb-3 font-semibold' }, 'Recent events'),
@@ -82,23 +82,29 @@ export function mount(root) {
 
   async function refreshContainers() {
     try {
-      const { containers: list } = await api('GET', '/system/containers');
+      const [{ containers: list }, { servers }] = await Promise.all([
+        api('GET', '/system/containers'),
+        api('GET', '/servers'),
+      ]);
+      const names = new Map(servers.map((s) => [s.id, s.name]));
       if (!list.length) {
-        containerMessage('No managed containers yet. Create a server on the Servers page.');
+        containerMessage('No servers yet. Create one on the Servers page.');
         return;
       }
       containers.replaceChildren(...list.map((c) => {
         const running = c.state === 'running';
         const cell = (text, cls = '') => h('td', { class: `py-2 pr-4 whitespace-nowrap tabular-nums ${cls}` }, running ? text : '—');
         return h('tr', { class: 'border-t border-border' },
-          h('td', { class: 'py-2 pr-4 font-mono text-xs' }, c.name),
+          h('td', { class: 'py-2 pr-4 font-medium' }, names.has(c.server_id)
+            ? h('a', { class: 'hover:underline', href: `#/servers/${c.server_id}` }, names.get(c.server_id))
+            : c.name),
           h('td', { class: `py-2 pr-4 ${running ? 'text-success' : 'text-muted'}` }, c.state),
           cell(percent(c.cpu_percent)),
           cell(`${bytes(c.memory.used_bytes)} of ${bytes(c.memory.limit_bytes)}`),
           cell(`↓ ${rate(c.network.rx_bytes_per_second)} ↑ ${rate(c.network.tx_bytes_per_second)}`));
       }));
     } catch (err) {
-      containerMessage(err.code === 'docker_unavailable' ? 'Docker unreachable.' : `Container metrics unavailable: ${err.message}`);
+      containerMessage(err.code === 'docker_unavailable' ? 'Docker unreachable.' : `Server metrics unavailable: ${err.message}`);
     }
   }
 
