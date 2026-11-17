@@ -45,3 +45,33 @@ export async function api(method, path, body) {
   }
   return data;
 }
+
+// upload sends files as multipart/form-data with upload progress (fetch has none).
+// onProgress receives a fraction between 0 and 1. Resolves to the JSON body; rejects with ApiError.
+export function upload(path, files, onProgress) {
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    for (const f of files) form.append('files', f, f.name);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `/api/v1${path}`);
+    xhr.setRequestHeader('Accept', 'application/json');
+    if (csrfToken) xhr.setRequestHeader('X-CSRF-Token', csrfToken);
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable) onProgress?.(e.loaded / e.total);
+    });
+    xhr.addEventListener('load', () => {
+      let data = null;
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {
+        // not JSON
+      }
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(data);
+      const e = data?.error ?? {};
+      if (xhr.status === 401 && e.code === 'unauthenticated') window.dispatchEvent(new CustomEvent('session-expired'));
+      reject(new ApiError(xhr.status, e.code ?? 'http_error', e.message ?? xhr.statusText, e.field));
+    });
+    xhr.addEventListener('error', () => reject(new ApiError(0, 'network_error', 'The upload failed. Check your connection.')));
+    xhr.send(form);
+  });
+}

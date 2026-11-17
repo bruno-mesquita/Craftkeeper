@@ -19,6 +19,7 @@ import (
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/auth"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/console"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/dashboard"
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/files"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/monitoring"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
 	"github.com/bruno-mesquita/mesquita-panel/internal/config"
@@ -99,6 +100,7 @@ func run() error {
 			HostCPUs: runtime.NumCPU(), PortFree: hostnet.TCPPortFree,
 		})
 	dashboardSvc := dashboard.NewService(dockerClient, serversSvc, auditLog)
+	filesSvc := files.NewService(filesystem.NewServerFiles(cfg.ServersDir(), uid, gid), serversSvc, auditLog)
 
 	// The console's event loop lives as long as the process; its feeds as long as viewers.
 	consoleSvc := console.NewService(containers, dockerClient, serversSvc, auditLog, log)
@@ -114,7 +116,7 @@ func run() error {
 	}()
 	hub := wspres.NewHub(authSvc, consoleSvc, log)
 
-	handler := httpapi.New(authSvc, monitoringSvc, dashboardSvc, serversSvc, hub, web.FS, log).Handler()
+	handler := httpapi.New(authSvc, monitoringSvc, dashboardSvc, serversSvc, filesSvc, hub, web.FS, log).Handler()
 	return serve(ctx, log, cfg.Listen, handler, hub)
 }
 

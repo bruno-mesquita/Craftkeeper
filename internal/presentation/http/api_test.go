@@ -22,6 +22,7 @@ import (
 
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/auth"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/dashboard"
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/files"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/monitoring"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
 	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
@@ -63,6 +64,8 @@ type client struct {
 	http *http.Client
 	csrf string
 	rt   *stubRuntime
+
+	serversDir string
 }
 
 func newServer(t *testing.T) *client {
@@ -90,17 +93,19 @@ func newServerWith(t *testing.T, containers monitoring.ContainerCollector) *clie
 		"assets/css/app.css": {Data: []byte("body{}")},
 	}
 	rt := newStubRuntime()
-	serversSvc := servers.NewService(sqlite.NewServers(store), rt, filesystem.NewServerDirs(filepath.Join(t.TempDir(), "servers"), os.Getuid(), os.Getgid()),
+	serversDir := filepath.Join(t.TempDir(), "servers")
+	serversSvc := servers.NewService(sqlite.NewServers(store), rt, filesystem.NewServerDirs(serversDir, os.Getuid(), os.Getgid()),
 		audit, servers.Config{FirstPort: 25601, LastPort: 25700, HostCPUs: 4, PortFree: func(int) bool { return true }})
 	api := httpapi.New(authSvc,
 		monitoring.NewService(stubCollector{}, containers, time.Second),
 		dashboard.NewService(docker.NewClient(filepath.Join(t.TempDir(), "no-docker.sock")), serversSvc, audit),
-		serversSvc, wspres.NewHub(authSvc, nil, log), static, log)
+		serversSvc, files.NewService(filesystem.NewServerFiles(serversDir, os.Getuid(), os.Getgid()), serversSvc, audit),
+		wspres.NewHub(authSvc, nil, log), static, log)
 
 	srv := httptest.NewServer(api.Handler())
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
-	return &client{t: t, base: srv.URL, http: &http.Client{Jar: jar}, rt: rt}
+	return &client{t: t, base: srv.URL, http: &http.Client{Jar: jar}, rt: rt, serversDir: serversDir}
 }
 
 // do sends a same-origin request the way a browser would (Sec-Fetch-Site: same-origin).

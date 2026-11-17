@@ -18,6 +18,14 @@ const (
 	AuditServerDelete  = "server.delete"
 	// AuditConsoleCommand targets "<server id>: <command>", the command truncated.
 	AuditConsoleCommand = "server.console_command"
+
+	// File actions target "<server name>: <path>".
+	AuditFileUpload  = "file.upload"
+	AuditFileWrite   = "file.write"
+	AuditFileMkdir   = "file.mkdir"
+	AuditFileRename  = "file.rename"
+	AuditFileDelete  = "file.delete"
+	AuditFileExtract = "file.extract"
 )
 
 type AuditEvent struct {

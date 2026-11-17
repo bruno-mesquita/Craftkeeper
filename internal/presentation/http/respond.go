@@ -68,6 +68,26 @@ func writeDomainError(w http.ResponseWriter, log *slog.Logger, err error) {
 	case errors.Is(err, domain.ErrDockerFailed):
 		log.Error("docker operation failed", "err", err)
 		writeError(w, http.StatusBadGateway, "docker_error", "Docker rejected the operation; see the panel log")
+	case errors.Is(err, domain.ErrFileExists):
+		writeError(w, http.StatusConflict, "file_exists", "a file or directory with that name already exists")
+	case errors.Is(err, domain.ErrNotDirectory):
+		writeError(w, http.StatusConflict, "not_a_directory", "the path is not a directory")
+	case errors.Is(err, domain.ErrIsDirectory):
+		writeError(w, http.StatusConflict, "is_a_directory", "the path is a directory")
+	case errors.Is(err, domain.ErrFileChanged):
+		writeError(w, http.StatusConflict, "file_changed", "the file changed since it was opened")
+	case errors.Is(err, domain.ErrFileTooLarge):
+		writeError(w, http.StatusRequestEntityTooLarge, "file_too_large", "the file is too large to edit")
+	case errors.Is(err, domain.ErrNotText):
+		writeError(w, http.StatusUnsupportedMediaType, "not_text", "the file is not UTF-8 text")
+	case errors.Is(err, domain.ErrInvalidArchive):
+		log.Info("invalid archive", "err", err)
+		writeError(w, http.StatusUnprocessableEntity, "invalid_archive", "the file is not a valid or safe zip archive")
+	case errors.Is(err, domain.ErrArchiveTooLarge):
+		writeError(w, http.StatusRequestEntityTooLarge, "archive_too_large", "the archive is too large to extract")
+	case errors.Is(err, domain.ErrInsufficientStorage):
+		log.Warn("disk full", "err", err)
+		writeError(w, http.StatusInsufficientStorage, "insufficient_storage", "not enough disk space")
 	case errors.Is(err, domain.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "resource not found")
 	default:
@@ -79,7 +99,12 @@ func writeDomainError(w http.ResponseWriter, log *slog.Logger, err error) {
 // decodeJSON reads a size-limited JSON object, rejecting unknown fields and trailing data.
 // On failure it writes the error response and returns false.
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody))
+	return decodeJSONLimit(w, r, dst, maxJSONBody)
+}
+
+// decodeJSONLimit is decodeJSON with a specific body size limit.
+func decodeJSONLimit(w http.ResponseWriter, r *http.Request, dst any, limit int64) bool {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
 		var tooLarge *http.MaxBytesError

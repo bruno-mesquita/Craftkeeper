@@ -1,0 +1,245 @@
+// Package files implements the file manager of a server's data directory: listing,
+// download, upload, text editing, directories, renames, deletion and zip extraction.
+// Writes are allowed while the server runs (the UI warns); confinement to the server's
+// directory is enforced by the Files adapter.
+package files
+
+import (
+	"context"
+	"io"
+	"os"
+	"path"
+	"time"
+
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
+	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+)
+
+// Files reaches the contents of server directories (filesystem.ServerFiles). Paths are
+// cleaned with domain.CleanServerPath before they get here.
+type Files interface {
+	List(id, dir string) (domain.FileListing, error)
+	Stat(id, p string) (domain.FileEntry, error)
+	OpenFile(id, p string) (*os.File, int64, error)
+	WriteZip(id, dir string, w io.Writer) error
+	ReadText(id, p string) (domain.FileText, error)
+	WriteText(id, p, content, version string) (string, error)
+	Save(id, dir, name string, src io.Reader, overwrite bool) (domain.FileEntry, error)
+	Mkdir(id, p string) error
+	Rename(id, from, to string) error
+	Remove(id, p string) error
+	Extract(id, archive, dest string, overwrite bool) (int, error)
+}
+
+// Servers resolves a server (servers.Service).
+type Servers interface {
+	Get(ctx context.Context, id string) (servers.View, error)
+}
+
+type AuditRecorder interface {
+	Record(ctx context.Context, e domain.AuditEvent) error
+}
+
+type Service struct {
+	files   Files
+	servers Servers
+	audit   AuditRecorder
+	now     func() time.Time
+}
+
+func NewService(f Files, s Servers, audit AuditRecorder) *Service {
+	return &Service{files: f, servers: s, audit: audit, now: time.Now}
+}
+
+// clean validates a path; nonRoot rejects the server's root directory itself.
+func clean(field, p string, nonRoot bool) (string, error) {
+	c, err := domain.CleanServerPath(field, p)
+	if err != nil {
+		return "", err
+	}
+	if nonRoot && c == "" {
+		return "", &domain.ValidationError{Field: field, Message: "the server's root directory cannot be used here"}
+	}
+	return c, nil
+}
+
+func (s *Service) List(ctx context.Context, id, dir string) (domain.FileListing, error) {
+	dir, err := clean("path", dir, false)
+	if err != nil {
+		return domain.FileListing{}, err
+	}
+	if _, err := s.servers.Get(ctx, id); err != nil {
+		return domain.FileListing{}, err
+	}
+	return s.files.List(id, dir)
+}
+
+// Download is what a download request resolves to: a regular file, or a directory to be
+// streamed as a zip archive by WriteZip.
+type Download struct {
+	Name string   // file name to offer the browser
+	File *os.File // nil for a directory
+	Size int64
+	Dir  string // cleaned path of the directory, when File is nil
+}
+
+func (s *Service) Download(ctx context.Context, id, p string) (Download, error) {
+	p, err := clean("path", p, false)
+	if err != nil {
+		return Download{}, err
+	}
+	if _, err := s.servers.Get(ctx, id); err != nil {
+		return Download{}, err
+	}
+	st, err := s.files.Stat(id, p)
+	if err != nil {
+		return Download{}, err
+	}
+	if st.Type == domain.FileTypeDir {
+		n := st.Name
+		if p == "" {
+			n = "server"
+		}
+		return Download{Name: n + ".zip", Dir: p}, nil
+	}
+	f, size, err := s.files.OpenFile(id, p)
+	if err != nil {
+		return Download{}, err
+	}
+	return Download{Name: st.Name, File: f, Size: size}, nil
+}
+
+// WriteZip streams a directory resolved by Download.
+func (s *Service) WriteZip(id string, d Download, w io.Writer) error {
+	return s.files.WriteZip(id, d.Dir, w)
+}
+
+func (s *Service) ReadText(ctx context.Context, id, p string) (domain.FileText, error) {
+	p, err := clean("path", p, true)
+	if err != nil {
+		return domain.FileText{}, err
+	}
+	if _, err := s.servers.Get(ctx, id); err != nil {
+		return domain.FileText{}, err
+	}
+	return s.files.ReadText(id, p)
+}
+
+func (s *Service) WriteText(ctx context.Context, id, p, content, version string, actor servers.Actor) (string, error) {
+	p, err := clean("path", p, true)
+	if err != nil {
+		return "", err
+	}
+	srv, err := s.servers.Get(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	v, err := s.files.WriteText(id, p, content, version)
+	s.record(ctx, actor, domain.AuditFileWrite, srv.Name, "/"+p, err)
+	return v, err
+}
+
+// Upload stores one uploaded file in directory dir.
+func (s *Service) Upload(ctx context.Context, id, dir, name string, src io.Reader, overwrite bool, actor servers.Actor) (domain.FileEntry, error) {
+	dir, err := clean("path", dir, false)
+	if err != nil {
+		return domain.FileEntry{}, err
+	}
+	if err := domain.ValidateFileName("name", name); err != nil {
+		return domain.FileEntry{}, err
+	}
+	srv, err := s.servers.Get(ctx, id)
+	if err != nil {
+		return domain.FileEntry{}, err
+	}
+	e, err := s.files.Save(id, dir, name, src, overwrite)
+	s.record(ctx, actor, domain.AuditFileUpload, srv.Name, "/"+path.Join(dir, name), err)
+	return e, err
+}
+
+func (s *Service) Mkdir(ctx context.Context, id, p string, actor servers.Actor) error {
+	p, err := clean("path", p, true)
+	if err != nil {
+		return err
+	}
+	srv, err := s.servers.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	err = s.files.Mkdir(id, p)
+	s.record(ctx, actor, domain.AuditFileMkdir, srv.Name, "/"+p, err)
+	return err
+}
+
+func (s *Service) Rename(ctx context.Context, id, from, to string, actor servers.Actor) error {
+	from, err := clean("from", from, true)
+	if err != nil {
+		return err
+	}
+	to, err = clean("to", to, true)
+	if err != nil {
+		return err
+	}
+	if to == from || len(to) > len(from) && to[:len(from)+1] == from+"/" {
+		return &domain.ValidationError{Field: "to", Message: "cannot move a directory into itself"}
+	}
+	srv, err := s.servers.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	err = s.files.Rename(id, from, to)
+	s.record(ctx, actor, domain.AuditFileRename, srv.Name, "/"+from+" -> /"+to, err)
+	return err
+}
+
+func (s *Service) Delete(ctx context.Context, id, p string, actor servers.Actor) error {
+	p, err := clean("path", p, true)
+	if err != nil {
+		return err
+	}
+	srv, err := s.servers.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	err = s.files.Remove(id, p)
+	s.record(ctx, actor, domain.AuditFileDelete, srv.Name, "/"+p, err)
+	return err
+}
+
+// Extract unpacks a zip archive of the server into directory dest.
+func (s *Service) Extract(ctx context.Context, id, archive, dest string, overwrite bool, actor servers.Actor) (int, error) {
+	archive, err := clean("path", archive, true)
+	if err != nil {
+		return 0, err
+	}
+	dest, err = clean("destination", dest, false)
+	if err != nil {
+		return 0, err
+	}
+	srv, err := s.servers.Get(ctx, id)
+	if err != nil {
+		return 0, err
+	}
+	n, err := s.files.Extract(id, archive, dest, overwrite)
+	s.record(ctx, actor, domain.AuditFileExtract, srv.Name, "/"+archive+" -> /"+dest, err)
+	return n, err
+}
+
+// record audits a mutation. Validation failures never reach it; failures of the operation
+// itself are recorded as unsuccessful.
+func (s *Service) record(ctx context.Context, actor servers.Actor, action, server, target string, err error) {
+	_ = s.audit.Record(context.WithoutCancel(ctx), domain.AuditEvent{
+		CreatedAt: s.now().UTC(), UserID: actor.UserID, Action: action,
+		Target: truncate(server+": "+target, 300), IP: actor.IP, Success: err == nil,
+	})
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && s[n]&0xC0 == 0x80 {
+		n--
+	}
+	return s[:n] + "…"
+}

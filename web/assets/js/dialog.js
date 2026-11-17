@@ -45,3 +45,26 @@ export function confirmDialog({ title, message, confirmLabel = 'Confirm', danger
     cancel.focus(); // the safe choice is the default for destructive actions
   });
 }
+
+// promptDialog asks for one line of text. Resolves to the trimmed value, or null when cancelled.
+export function promptDialog({ title, label, value = '', confirmLabel = 'OK' }) {
+  return new Promise((resolve) => {
+    let result = null;
+    const input = h('input', { class: 'input', id: `prompt-${++counter}`, value, autocomplete: 'off', spellcheck: 'false' });
+    const cancel = h('button', { class: 'btn btn-ghost', type: 'button' }, 'Cancel');
+    const ok = h('button', { class: 'btn btn-primary', type: 'submit' }, confirmLabel);
+    const form = h('form', { class: 'flex flex-col gap-4' },
+      h('div', { class: 'field' }, h('label', { class: 'label', for: input.id }, label), input),
+      h('div', { class: 'flex justify-end gap-2' }, cancel, ok));
+    const { close } = openDialog({ title, content: form, onClose: () => resolve(result) });
+    cancel.addEventListener('click', close);
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!input.value.trim()) return input.focus();
+      result = input.value.trim();
+      close();
+    });
+    input.focus();
+    input.select();
+  });
+}

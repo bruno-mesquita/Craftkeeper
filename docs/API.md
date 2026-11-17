@@ -199,6 +199,85 @@ removes the record. A container that is already gone, or that no longer carries 
 labels, is left alone and only forgotten.
 `204` · `404` · `422` (invalid `delete_files`) · `502` · `503`.
 
+## Files
+
+The file manager of a server. Every operation is confined to the server's directory
+(`<data dir>/servers/<id>`): paths are relative to it, `/`-separated, and `""` or `/` is its
+root. A path with `..`, a backslash, NUL or control characters, longer than 1024 bytes or with
+a segment over 255 bytes answers `422 validation_failed` (`field`: `path`, `from`, `to` or
+`destination`). Symbolic links are listed but never followed outside the server directory
+(`422`); they cannot be edited, and zip downloads and extractions skip them.
+
+Writes are allowed while the server runs (the game may overwrite configuration files, and
+changing world files while it runs can corrupt them). Uploads and edits are atomic: written to
+a temporary file next to the target, then renamed. Files the panel creates belong to the user
+the game container runs as. Every change is recorded in the audit log (`file.upload`,
+`file.write`, `file.mkdir`, `file.rename`, `file.delete`, `file.extract`; target
+`<server name>: /<path>`).
+
+Transfers have no total time limit; a download or upload that makes no progress for 60 s is
+dropped.
+
+**FileEntry**
+```json
+{"name": "server.properties", "type": "file", "size": 1234, "modified_at": "2026-11-17T12:00:00Z"}
+```
+`type`: `file`, `dir` (size 0), `symlink` (size of the link itself) or `other` (devices,
+sockets; never opened).
+
+Errors common to these endpoints: `404 not_found` (server or path) · `409 not_a_directory` ·
+`409 is_a_directory` · `422 validation_failed` · `507 insufficient_storage`.
+
+### `GET /servers/{id}/files?path=<dir>` — auth
+`200 {"path": "world", "entries": [FileEntry], "truncated": false}`. Directories first, then
+by name. At most 10 000 entries; `truncated` is `true` when there are more.
+
+### `GET /servers/{id}/files/download?path=<path>` — auth
+A file is sent as `application/octet-stream` with `Content-Length`; a directory as a zip archive
+(`application/zip`, entries prefixed with the directory's name, or `server/` for the root;
+symlinks skipped; files changing during the download may be captured inconsistently). Both with
+`Content-Disposition: attachment`. An error after the transfer started aborts the connection.
+
+### `GET /servers/{id}/files/content?path=<file>` — auth
+For the editor: `200 {"path", "content", "version", "size"}`. `version` is opaque.
+`413 file_too_large` (over 1 MiB) · `415 not_text` (not UTF-8, or contains NUL) ·
+`422` (symlink, special file or root).
+
+### `PUT /servers/{id}/files/content` — auth + CSRF
+Body `{"path", "content", "version"?}` (body up to ~6 MiB; `content` up to 1 MiB). Creates or
+replaces the file; an existing file keeps its permissions. With `version`, the file must still
+be at that version, else `409 file_changed` (also when it was deleted). Without `version` the
+file is written unconditionally.
+`200 {"version"}` · `409 file_changed` · `413 file_too_large`.
+
+### `POST /servers/{id}/files/upload?path=<dir>&overwrite=true|false` — auth + CSRF
+`multipart/form-data`; every part with a file name is saved in `<dir>` under its base name
+(other fields are ignored). Streamed to disk, up to 2 GiB per request. Without
+`overwrite=true` an existing file answers `409 file_exists` (files saved earlier in the same
+request are kept).
+`201 {"files": [FileEntry]}` · `400 invalid_multipart` · `409 file_exists` ·
+`413 payload_too_large` · `422` (no file, invalid name, invalid `overwrite`).
+
+### `POST /servers/{id}/files/directory` — auth + CSRF
+Body `{"path"}`; the parent must exist. `204` · `409 file_exists`.
+
+### `POST /servers/{id}/files/rename` — auth + CSRF
+Body `{"from", "to"}`; also moves between directories. An existing `to` is never replaced
+(`409 file_exists`); a directory cannot move into itself (`422`). `204`.
+
+### `POST /servers/{id}/files/extract` — auth + CSRF
+Body `{"path": "<zip file>", "destination": "<dir>", "overwrite"?: false}`. Entries are
+validated like any path (an entry with `..` or an absolute name rejects the whole archive);
+names without the zip UTF-8 flag are decoded as CP437, as the format specifies (so a byte
+`0x15` becomes `§`, common in Minecraft world names); symlinks are skipped. Limits: 100 000 entries and 8 GiB actually decompressed. Conflicts are
+checked before anything is written; a corrupt entry found midway leaves the entries already
+written.
+`200 {"entries": n}` · `409 file_exists` · `413 archive_too_large` · `422 invalid_archive`.
+
+### `DELETE /servers/{id}/files?path=<path>` — auth + CSRF
+Deletes a file, a symlink (never its target) or a directory with everything inside. The root
+cannot be deleted (`422`). `204`.
+
 ## WebSocket
 
 ### `GET /ws` — auth
@@ -209,4 +288,4 @@ Live console and server status. Protocol, messages, limits and close codes:
 
 ## Planned
 
-Files (phase 5), backups (phase 6) — as listed in `docs/SPEC.md` §10.
+Backups (phase 6) — as listed in `docs/SPEC.md` §10.

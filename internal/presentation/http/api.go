@@ -8,6 +8,7 @@ import (
 
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/auth"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/dashboard"
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/files"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/monitoring"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
 	wspres "github.com/bruno-mesquita/mesquita-panel/internal/presentation/websocket"
@@ -19,13 +20,15 @@ type API struct {
 	monitoring *monitoring.Service
 	dashboard  *dashboard.Service
 	servers    *servers.Service
+	files      *files.Service
 	ws         *wspres.Hub
 	static     fs.FS
 	log        *slog.Logger
 }
 
-func New(a *auth.Service, m *monitoring.Service, d *dashboard.Service, s *servers.Service, ws *wspres.Hub, static fs.FS, log *slog.Logger) *API {
-	return &API{auth: a, monitoring: m, dashboard: d, servers: s, ws: ws, static: static, log: log}
+func New(a *auth.Service, m *monitoring.Service, d *dashboard.Service, s *servers.Service, f *files.Service,
+	ws *wspres.Hub, static fs.FS, log *slog.Logger) *API {
+	return &API{auth: a, monitoring: m, dashboard: d, servers: s, files: f, ws: ws, static: static, log: log}
 }
 
 // Handler returns the complete HTTP handler with middleware applied.
@@ -54,6 +57,17 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/servers/{id}/stop", a.requireAuth(a.withServerID(a.serverAction(a.servers.Stop))))
 	mux.HandleFunc("POST /api/v1/servers/{id}/restart", a.requireAuth(a.withServerID(a.serverAction(a.servers.Restart))))
 	mux.HandleFunc("POST /api/v1/servers/{id}/kill", a.requireAuth(a.withServerID(a.serverAction(a.servers.Kill))))
+
+	fileRoute := func(h http.HandlerFunc) http.HandlerFunc { return a.requireAuth(a.withServerID(h)) }
+	mux.HandleFunc("GET /api/v1/servers/{id}/files", fileRoute(a.listFiles))
+	mux.HandleFunc("DELETE /api/v1/servers/{id}/files", fileRoute(a.deleteFile))
+	mux.HandleFunc("GET /api/v1/servers/{id}/files/download", fileRoute(a.downloadFile))
+	mux.HandleFunc("GET /api/v1/servers/{id}/files/content", fileRoute(a.readFileContent))
+	mux.HandleFunc("PUT /api/v1/servers/{id}/files/content", fileRoute(a.writeFileContent))
+	mux.HandleFunc("POST /api/v1/servers/{id}/files/upload", fileRoute(a.uploadFiles))
+	mux.HandleFunc("POST /api/v1/servers/{id}/files/directory", fileRoute(a.makeDirectory))
+	mux.HandleFunc("POST /api/v1/servers/{id}/files/rename", fileRoute(a.renameFile))
+	mux.HandleFunc("POST /api/v1/servers/{id}/files/extract", fileRoute(a.extractArchive))
 
 	mux.HandleFunc("GET /api/v1/ws", a.requireAuth(a.websocket))
 

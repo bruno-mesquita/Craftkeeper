@@ -1,9 +1,11 @@
-// Server page: header with live status and lifecycle actions, and the live console
-// (WebSocket channel server:<id>, docs/WEBSOCKET.md). Usage is polled over REST.
+// Server page: header with live status and lifecycle actions, then tabs: the live console
+// (WebSocket channel server:<id>, docs/WEBSOCKET.md) and the file manager. Usage is polled
+// over REST.
 import { api, ApiError } from '../api.js';
 import { h, toast } from '../dom.js';
 import { bytes, percent } from '../format.js';
-import { ACTIONS, STATUS, confirmAction, lifecycleActions, runAction } from '../server-actions.js';
+import { mountFileManager } from '../file-manager.js';
+import { ACTIONS, ACTIVE, STATUS, confirmAction, lifecycleActions, runAction } from '../server-actions.js';
 import * as ws from '../ws.js';
 
 const MAX_LINES = 2000; // older lines are dropped from the page (the server keeps the log)
@@ -53,6 +55,45 @@ export function mount(root, { param: id }) {
   const sendBtn = h('button', { class: 'btn btn-primary', type: 'submit' }, 'Send');
   const form = h('form', { class: 'mt-3 flex gap-2' }, input, sendBtn);
 
+  const consolePanel = h('section', { class: 'card', id: 'panel-console', role: 'tabpanel', 'aria-labelledby': 'tab-console' },
+    h('div', { class: 'mb-3 flex items-center justify-end gap-3' }, conn),
+    h('div', { class: 'relative' }, log, jump),
+    form);
+  const filesPanel = h('section', { class: 'card', id: 'panel-files', role: 'tabpanel', 'aria-labelledby': 'tab-files', hidden: true });
+  let files = null; // file manager, mounted on first use
+
+  const tabButtons = {
+    console: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-console', 'aria-controls': 'panel-console' }, 'Console'),
+    files: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-files', 'aria-controls': 'panel-files' }, 'Files'),
+  };
+  const panels = { console: consolePanel, files: filesPanel };
+
+  function showTab(name) {
+    for (const [n, b] of Object.entries(tabButtons)) {
+      const on = n === name;
+      b.setAttribute('aria-selected', String(on));
+      b.tabIndex = on ? 0 : -1;
+      if (on) b.setAttribute('aria-current', 'page');
+      else b.removeAttribute('aria-current');
+      panels[n].hidden = !on;
+    }
+    if (name === 'files' && !files) {
+      files = mountFileManager(filesPanel, { id });
+      files.setRunning(Boolean(server && ACTIVE.has(server.status)));
+    }
+  }
+  for (const [n, b] of Object.entries(tabButtons)) b.addEventListener('click', () => showTab(n));
+  // Arrow keys move between tabs (WAI-ARIA tabs pattern).
+  const tablist = h('div', { class: 'mb-3 flex gap-1', role: 'tablist', 'aria-label': 'Server sections' }, ...Object.values(tabButtons));
+  tablist.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    const names = Object.keys(tabButtons);
+    const i = names.indexOf(Object.keys(panels).find((n) => !panels[n].hidden));
+    const next = names[(i + (e.key === 'ArrowRight' ? 1 : names.length - 1)) % names.length];
+    showTab(next);
+    tabButtons[next].focus();
+  });
+
   root.replaceChildren(
     back,
     h('div', { class: 'mt-4 mb-6 flex flex-wrap items-start justify-between gap-4' },
@@ -61,12 +102,10 @@ export function mount(root, { param: id }) {
         meta, usage),
       actions),
     notice,
-    h('section', { class: 'card', 'aria-labelledby': 'console-title' },
-      h('div', { class: 'mb-3 flex items-center justify-between gap-3' },
-        h('h2', { id: 'console-title', class: 'text-base font-semibold' }, 'Console'),
-        conn),
-      h('div', { class: 'relative' }, log, jump),
-      form));
+    tablist,
+    consolePanel,
+    filesPanel);
+  showTab('console');
 
   // --- header -------------------------------------------------------------------------
 
@@ -82,6 +121,7 @@ export function mount(root, { param: id }) {
       h('button', { class: `btn ${a === 'start' ? 'btn-primary' : 'btn-ghost'}`, type: 'button', disabled: Boolean(busy), onclick: () => act(a) },
         ACTIONS[a].label)));
     renderInput();
+    files?.setRunning(ACTIVE.has(server.status));
   }
 
   async function act(action) {
@@ -106,7 +146,9 @@ export function mount(root, { param: id }) {
       if (err instanceof ApiError && err.status === 404) {
         title.textContent = 'Server not found';
         unsubscribe();
-        form.hidden = true;
+        tablist.hidden = true;
+        consolePanel.hidden = true;
+        filesPanel.hidden = true;
         return;
       }
       notice.hidden = false;

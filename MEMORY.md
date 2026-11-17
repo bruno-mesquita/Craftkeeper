@@ -61,6 +61,13 @@ Formato: decisão — motivo — consequência.
 - **D28 · Limites fixos do WS** — 64 conexões / 8 por usuário (429), mensagem ≤ 4 KiB (1009), 16 inscrições, fila de 512 mensagens (cheia → 1013), write deadline 10 s, ping 30 s / silêncio 60 s, sessão revalidada a cada 60 s e antes de cada comando (4401). Console aberto renova a sessão.
 - **D29 · Anti-CSWSH** — `Origin` obrigatório e igual ao `Host` + cookie `SameSite=Strict`; sem token CSRF na URL. Exceção: `_test.go` de `presentation/websocket` importa o client do gorilla só como par de teste.
 - **Dependência:** `github.com/gorilla/websocket` v1.5.3 (spec §8, D6), só em `internal/infrastructure/websocket`.
+- **D30 · File manager via `os.Root` na pasta do servidor** (Go 1.25+: `MkdirAll`, `RemoveAll`, `Rename`, `Lchown`, `Chmod`, `FS`). `domain.CleanServerPath` só dá erros claros; a garantia é o `os.Root` (erro "path escapes from parent" → `422`). Symlinks listados, nunca seguidos para fora; não editáveis; zip e extração os ignoram. O adaptador recebe caminhos já limpos (`""` = raiz).
+- **D31 · Arquivos criados pelo painel com uid:gid do container** (D21) — `Lchown` após criar; arquivos 0640, pastas 0750; edição preserva o modo original.
+- **D32 · Escritas atômicas** — upload, edição e extração gravam `.mesquita-tmp-*` na mesma pasta, `fsync`, `rename`; falha remove o temporário. Overwrite só explícito (`409 file_exists`); corrida `Lstat`→`Rename` aceita.
+- **D33 · Limites fixos** — upload ≤ 2 GiB/requisição (multipart em streaming); editor ≤ 1 MiB, UTF-8 sem NUL; listagem ≤ 10 000; extração ≤ 100 000 entradas e ≤ 8 GiB realmente descomprimidos; entrada com `..`/absoluta rejeita o zip inteiro; conflitos checados antes de escrever. Nomes sem a flag UTF-8 do zip são decodificados como CP437 (`cp437.go`; glifos em 0x01–0x1F, ex.: 0x15 = `§` dos nomes de mundo do Minecraft — achado no teste real de 2026-11-17).
+- **D34 · Deadlines por progresso** — download/zip/upload estendem o deadline a cada chunk (60 s parado derruba); erro depois de começar o stream aborta a conexão (`http.ErrAbortHandler`) em vez de entregar arquivo truncado.
+- **D35 · Versão para edição concorrente** = inode + mtime ns + tamanho (o mtime do kernel é grosseiro; cada escrita atômica troca o inode). `PUT content` com versão diferente → `409 file_changed`. Escrita no lugar com mesmo tamanho no mesmo tique não é detectável (raro; aceito).
+- Escrita de arquivos permitida com o servidor rodando (escolha do usuário); a UI avisa.
 - **D10 · systemd com usuário dedicado `mesquita-panel`** — princípio do menor privilégio. — Precisa estar no grupo `docker` (root-equivalente) a partir da Fase 3; criação do usuário e grupo exige autorização no deploy.
 
 ---
@@ -86,7 +93,7 @@ Formato: decisão — motivo — consequência.
 | 2 | Monitoring (CPU, RAM, disco, rede, métricas de containers) | ✅ implementada e verificada (2026-11-17) | ver Fase 2 abaixo |
 | 3 | Server management (Docker, criação, ciclo de vida, limites) | ✅ implementada, testada e verificada com servidor real (2026-11-17) | ver Fase 3 abaixo |
 | 4 | WebSocket + console | ✅ implementada, testada e verificada com servidor real (2026-11-17) | ver Fase 4 abaixo |
-| 5 | File manager | planejada | |
+| 5 | File manager | ✅ implementada, testada e verificada com servidor real (2026-11-17) | ver Fase 5 abaixo |
 | 6 | Backups | planejada | |
 | 7 | Game installers (Vanilla, Paper, Purpur, Fabric, Forge, NeoForge) | planejada | |
 
@@ -155,6 +162,23 @@ Plano: `~/.claude/plans/fa-a-o-planejamento-da-encapsulated-church.md`. Decisõe
   (Stop/Start); reconexão sozinha após reiniciar o painel, com histórico; logout em outra aba
   fecha o console (4401); dois consoles simultâneos; Crafty intacto.
 - **Fora do escopo:** métricas por WebSocket (seguem por polling, D18); arquivos (5), backups (6).
+
+## Fase 5 — estado (2026-11-17)
+
+Plano: `~/.claude/plans/fa-a-o-planejamento-da-encapsulated-church.md`. Decisões D30–D35.
+- **Implementado:** `domain/files.go` (`CleanServerPath`, `ValidateFileName`, tipos, erros,
+  auditoria `file.*`); `filesystem/files.go` (`ServerFiles`: list, stat, open, read/write text,
+  save, mkdir, rename, remove) e `zip.go` (`WriteZip`, `Extract`); `application/files`;
+  `presentation/http/files.go` (9 rotas, `progressWriter/Reader`, `decodeJSONLimit`);
+  frontend: abas Console | Files em `pages/server.js`, `file-manager.js`, `api.upload` (XHR com
+  progresso), `promptDialog`; `docs/API.md` (Files).
+- **Testado:** `sudo make check` passou (binário 13,0 MB). Testes de segurança: symlink para
+  `/etc`, `..`, symlink loop, arquivo fora da pasta intacto, zip slip, symlink em zip, CRC
+  corrompido, contagem real de bytes; contrato HTTP completo.
+- **Verificado de verdade (usuário, 2026-11-17):** roteiro completo (edição + restart, 409,
+  upload, download de pasta como `.zip`, renomear/criar/apagar, `?path=../..` → 422). A
+  extração falhou num zip real com `§` em nome CP437 → corrigido com `cp437.go` e
+  re-verificado.
 
 ## Roadmap — Fase 1 (Foundation, referência)
 
