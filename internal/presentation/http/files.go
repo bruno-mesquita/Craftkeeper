@@ -265,3 +265,42 @@ func (a *API) extractArchive(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]int{"entries": n})
 }
+
+func (a *API) getModpack(w http.ResponseWriter, r *http.Request) {
+	info, err := a.files.ModpackInfo(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeDomainError(w, a.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
+func (a *API) configureModpack(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		InstallScript string `json:"install_script"`
+		StartScript   string `json:"start_script"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := a.files.ConfigureModpack(r.Context(), r.PathValue("id"), req.InstallScript, req.StartScript, actorOf(r)); err != nil {
+		writeDomainError(w, a.log, err)
+		return
+	}
+	info, err := a.files.ModpackInfo(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeDomainError(w, a.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
+func (a *API) installModpack(w http.ResponseWriter, r *http.Request) {
+	extendDeadlines(w, createDeadline)
+	v, err := a.files.InstallModpack(r.Context(), r.PathValue("id"), actorOf(r))
+	if err != nil {
+		writeDomainError(w, a.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toServerDTO(v))
+}

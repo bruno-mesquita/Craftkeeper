@@ -304,6 +304,31 @@ checked before anything is written; a corrupt entry found midway leaves the entr
 written.
 `200 {"entries": n}` · `409 file_exists` · `413 archive_too_large` · `422 invalid_archive`.
 
+### Modpack scripts
+
+Modpacks are imported through the existing file upload and ZIP extraction endpoints. Upload the
+server-pack ZIP into the server root, then extract it into the root (overwrite is disabled by
+default). The panel discovers regular `.sh` files inside the server directory; symlinks are
+not followed. Create the server with the modpack's exact Minecraft version first because that
+version selects the Java image used to run its scripts.
+
+`GET /servers/{id}/modpack` returns `{ "supported", "scripts", "install_script", "start_script", "installed" }`.
+`PUT /servers/{id}/modpack` accepts `{ "install_script", "start_script" }`; both paths must
+refer to discovered shell scripts and the server must be stopped. The chosen paths are stored
+as server metadata inside the data directory and included in backups.
+
+`POST /servers/{id}/modpack/install` starts the managed container. On its first start it runs
+the selected installer as the container's unprivileged server user; after success it records
+completion and immediately runs the selected startup script. Later starts run only the startup
+script. Installer and game output use the existing Console stream. A failed installer does not
+mark installation complete; the container stays idle to avoid an automatic restart loop. Stop
+it, then start installation again to retry. This feature is available for servers
+created after the modpack-capable container wrapper is installed; older containers remain
+unchanged and report `supported: false`.
+
+Scripts are executable code from the uploaded pack. The panel runs them only inside its
+managed, resource-limited, non-root container; installation is an explicit user action.
+
 ### `DELETE /servers/{id}/files?path=<path>` — auth + CSRF
 Deletes a file, a symlink (never its target) or a directory with everything inside. The root
 cannot be deleted (`422`). `204`.

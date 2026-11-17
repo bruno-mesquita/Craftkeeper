@@ -7,6 +7,7 @@ import { bytes, percent } from '../format.js';
 import { mountBackupManager } from '../backup-manager.js';
 import { mountFileManager } from '../file-manager.js';
 import { mountPlayerManager } from '../player-manager.js';
+import { mountModpackManager } from '../modpack-manager.js';
 import { ACTIONS, ACTIVE, STATUS, confirmAction, gameVersion, lifecycleActions, runAction } from '../server-actions.js';
 import * as ws from '../ws.js';
 
@@ -67,14 +68,17 @@ export function mount(root, { param: id }) {
   let backups = null; // backup manager, mounted on first use
   const playersPanel = h('section', { class: 'card', id: 'panel-players', role: 'tabpanel', 'aria-labelledby': 'tab-players', hidden: true });
   let players = null; // player manager, mounted on first use
+  const modpackPanel = h('section', { class: 'card', id: 'panel-modpack', role: 'tabpanel', 'aria-labelledby': 'tab-modpack', hidden: true });
+  let modpack = null;
 
   const tabButtons = {
     console: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-console', 'aria-controls': 'panel-console' }, 'Console'),
     files: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-files', 'aria-controls': 'panel-files' }, 'Files'),
     backups: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-backups', 'aria-controls': 'panel-backups' }, 'Backups'),
     players: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-players', 'aria-controls': 'panel-players' }, 'Players'),
+    modpack: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-modpack', 'aria-controls': 'panel-modpack' }, 'Modpack'),
   };
-  const panels = { console: consolePanel, files: filesPanel, backups: backupsPanel, players: playersPanel };
+  const panels = { console: consolePanel, files: filesPanel, backups: backupsPanel, players: playersPanel, modpack: modpackPanel };
 
   function showTab(name) {
     for (const [n, b] of Object.entries(tabButtons)) {
@@ -94,6 +98,11 @@ export function mount(root, { param: id }) {
       players.setRunning(Boolean(server && ACTIVE.has(server.status)));
     } else if (name === 'players') {
       players.refresh();
+    }
+    if (name === 'modpack') {
+      if (!modpack) modpack = mountModpackManager(modpackPanel, { id, onInstall: () => showTab('console') });
+      else modpack.refresh();
+      modpack?.setRunning(Boolean(server && ACTIVE.has(server.status)));
     }
     if (name === 'backups') {
       if (!backups) {
@@ -128,7 +137,8 @@ export function mount(root, { param: id }) {
     consolePanel,
     filesPanel,
     backupsPanel,
-    playersPanel);
+    playersPanel,
+    modpackPanel);
   showTab('console');
 
   // --- header -------------------------------------------------------------------------
@@ -148,6 +158,7 @@ export function mount(root, { param: id }) {
     files?.setRunning(ACTIVE.has(server.status));
     backups?.setRunning(ACTIVE.has(server.status));
     players?.setRunning(ACTIVE.has(server.status));
+    modpack?.setRunning(ACTIVE.has(server.status));
   }
 
   async function act(action) {

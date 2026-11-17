@@ -49,6 +49,20 @@ func (d *ServerDirs) Create(id string) (string, error) {
 		os.Remove(path)
 		return "", fmt.Errorf("filesystem: %w", err)
 	}
+	marker := filepath.Join(path, ".mesquita-modpack-supported")
+	f, err := os.OpenFile(marker, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o640)
+	if err != nil {
+		os.RemoveAll(path)
+		return "", fmt.Errorf("filesystem: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		os.RemoveAll(path)
+		return "", fmt.Errorf("filesystem: %w", err)
+	}
+	if err := os.Lchown(marker, d.uid, d.gid); err != nil {
+		os.RemoveAll(path)
+		return "", fmt.Errorf("filesystem: %w", err)
+	}
 	return path, nil
 }
 

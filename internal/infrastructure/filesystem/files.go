@@ -83,6 +83,9 @@ func (s *ServerFiles) List(id, dir string) (domain.FileListing, error) {
 	for {
 		batch, err := f.ReadDir(readDirBatch)
 		for _, e := range batch {
+			if isModpackMetadata(e.Name()) {
+				continue
+			}
 			if len(out.Entries) == domain.ListEntriesMax {
 				out.Truncated = true
 				break
@@ -110,6 +113,42 @@ func (s *ServerFiles) List(id, dir string) (domain.FileListing, error) {
 		return strings.Compare(a.Name, b.Name)
 	})
 	return out, nil
+}
+
+func isModpackMetadata(name string) bool {
+	switch name {
+	case ".mesquita-modpack", ".mesquita-modpack-installed", ".mesquita-modpack-supported":
+		return true
+	default:
+		return false
+	}
+}
+
+// FindShellScripts returns regular .sh files inside the server directory. WalkDir does not
+// follow symlinks, so an archive cannot make script discovery escape the server root.
+func (s *ServerFiles) FindShellScripts(id string) ([]string, error) {
+	r, err := s.open(id)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	out := []string{}
+	err = fs.WalkDir(r.FS(), ".", func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if d.Type().IsRegular() && strings.EqualFold(path.Ext(d.Name()), ".sh") {
+			out = append(out, strings.TrimPrefix(p, "./"))
+			if len(out) > domain.ListEntriesMax {
+				return fmt.Errorf("too many shell scripts")
+			}
+		}
+		return nil
+	})
+	return out, mapError(err)
 }
 
 func entryOf(n string, info fs.FileInfo) domain.FileEntry {

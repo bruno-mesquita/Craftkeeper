@@ -78,6 +78,9 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/servers/{id}/files/directory", fileRoute(a.makeDirectory))
 	mux.HandleFunc("POST /api/v1/servers/{id}/files/rename", fileRoute(a.renameFile))
 	mux.HandleFunc("POST /api/v1/servers/{id}/files/extract", fileRoute(a.extractArchive))
+	mux.HandleFunc("GET /api/v1/servers/{id}/modpack", fileRoute(a.getModpack))
+	mux.HandleFunc("PUT /api/v1/servers/{id}/modpack", fileRoute(a.configureModpack))
+	mux.HandleFunc("POST /api/v1/servers/{id}/modpack/install", fileRoute(a.installModpack))
 
 	backupRoute := func(h http.HandlerFunc) http.HandlerFunc { return fileRoute(withBackupID(h)) }
 	mux.HandleFunc("GET /api/v1/servers/{id}/backups", fileRoute(a.listBackups))

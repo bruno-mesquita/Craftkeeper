@@ -58,6 +58,8 @@ func writeZip(fsys fs.FS, dir, prefix string, w io.Writer, fast bool) error {
 		switch {
 		case entry == "":
 			return nil // the root itself, without a prefix
+		case d.Name() == ".mesquita-modpack-supported":
+			return nil // container capability belongs to the runtime, not a portable backup
 		case strings.HasPrefix(d.Name(), tempPrefix):
 			return nil
 		case d.IsDir():

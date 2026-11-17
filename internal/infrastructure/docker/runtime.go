@@ -129,6 +129,8 @@ type portBinding struct {
 
 type createRequest struct {
 	Image        string              `json:"Image"`
+	Entrypoint   []string            `json:"Entrypoint"`
+	Cmd          []string            `json:"Cmd"`
 	User         string              `json:"User"`
 	Env          []string            `json:"Env"`
 	Labels       map[string]string   `json:"Labels"`
@@ -137,6 +139,37 @@ type createRequest struct {
 	StopTimeout  int                 `json:"StopTimeout"`
 	HostConfig   hostConfig          `json:"HostConfig"`
 }
+
+// serverEntrypoint preserves the itzg launcher for ordinary servers. A configured modpack
+// uses its first start for a one-shot install, then its selected script for later starts.
+// Both scripts run inside the already constrained, non-root server container.
+const serverEntrypoint = `if [ -f /data/.mesquita-modpack ]; then
+  exec 3< /data/.mesquita-modpack
+  IFS= read -r installer <&3
+  IFS= read -r launcher <&3
+  exec 3<&-
+  cd /data || exit 1
+  if [ ! -f /data/.mesquita-modpack-installed ]; then
+    echo '[Mesquita] Installing modpack with '"$installer"
+    installer_dir=${installer%/*}; installer_name=${installer##*/}
+    [ "$installer_dir" = "$installer" ] && installer_dir=.
+    cd "/data/$installer_dir" || exit 1
+    /bin/bash "./$installer_name"
+    result=$?
+    if [ "$result" -ne 0 ]; then
+      echo "[Mesquita] Installer exited with status $result. Stop this server before retrying installation."
+      while :; do sleep 3600; done
+    fi
+    touch /data/.mesquita-modpack-installed
+    echo '[Mesquita] Installation complete. Starting the modpack.'
+  fi
+  echo '[Mesquita] Starting modpack with '"$launcher"
+  launcher_dir=${launcher%/*}; launcher_name=${launcher##*/}
+  [ "$launcher_dir" = "$launcher" ] && launcher_dir=.
+  cd "/data/$launcher_dir" || exit 1
+  exec /bin/bash "./$launcher_name"
+fi
+exec /start "$@"`
 
 type hostConfig struct {
 	Binds         []string                 `json:"Binds"`
@@ -175,9 +208,11 @@ func (r *Runtime) Create(ctx context.Context, spec domain.ContainerSpec) (string
 	}
 
 	body := createRequest{
-		Image: ref,
-		User:  r.user,
-		Env:   spec.Env,
+		Image:      ref,
+		Entrypoint: []string{"/bin/sh", "-c"},
+		Cmd:        []string{serverEntrypoint},
+		User:       r.user,
+		Env:        spec.Env,
 		Labels: map[string]string{
 			LabelManaged:  managedLabelValue,
 			LabelServerID: spec.ServerID,

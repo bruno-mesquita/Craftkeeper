@@ -6,9 +6,13 @@ package files
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path"
+	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
@@ -29,11 +33,21 @@ type Files interface {
 	Rename(id, from, to string) error
 	Remove(id, p string) error
 	Extract(id, archive, dest string, overwrite bool) (int, error)
+	FindShellScripts(id string) ([]string, error)
 }
 
 // Servers resolves a server (servers.Service).
 type Servers interface {
 	Get(ctx context.Context, id string) (servers.View, error)
+	Start(ctx context.Context, id string, actor servers.Actor) (servers.View, error)
+}
+
+type Modpack struct {
+	Supported     bool     `json:"supported"`
+	Scripts       []string `json:"scripts"`
+	InstallScript string   `json:"install_script"`
+	StartScript   string   `json:"start_script"`
+	Installed     bool     `json:"installed"`
 }
 
 type AuditRecorder interface {
@@ -223,6 +237,122 @@ func (s *Service) Extract(ctx context.Context, id, archive, dest string, overwri
 	n, err := s.files.Extract(id, archive, dest, overwrite)
 	s.record(ctx, actor, domain.AuditFileExtract, srv.Name, "/"+archive+" -> /"+dest, err)
 	return n, err
+}
+
+// ModpackInfo discovers shell scripts in the server directory and reports the configured
+// scripts plus whether the one-time installer has completed.
+func (s *Service) ModpackInfo(ctx context.Context, id string) (Modpack, error) {
+	if _, err := s.servers.Get(ctx, id); err != nil {
+		return Modpack{}, err
+	}
+	scripts, err := s.files.FindShellScripts(id)
+	if err != nil {
+		return Modpack{}, err
+	}
+	info := Modpack{Scripts: scripts}
+	e, err := s.files.Stat(id, ".mesquita-modpack-supported")
+	if err == nil && e.Type == domain.FileTypeFile {
+		info.Supported = true
+	} else if err != nil && !errors.Is(err, domain.ErrNotFound) {
+		return Modpack{}, err
+	}
+	f, _, err := s.files.OpenFile(id, ".mesquita-modpack")
+	if err == nil && f != nil {
+		defer f.Close()
+		b, readErr := io.ReadAll(io.LimitReader(f, 4096))
+		if readErr != nil {
+			return Modpack{}, readErr
+		}
+		lines := strings.Split(strings.TrimSuffix(string(b), "\n"), "\n")
+		if len(lines) == 2 {
+			info.InstallScript, info.StartScript = lines[0], lines[1]
+		}
+	} else if err != nil && !errors.Is(err, domain.ErrNotFound) {
+		return Modpack{}, err
+	}
+	e, err = s.files.Stat(id, ".mesquita-modpack-installed")
+	if err == nil && e.Type == domain.FileTypeFile {
+		info.Installed = true
+	} else if err != nil && !errors.Is(err, domain.ErrNotFound) {
+		return Modpack{}, err
+	}
+	return info, nil
+}
+
+// ConfigureModpack persists the user's explicit script selection after confirming both
+// paths came from regular shell scripts inside the server directory.
+func (s *Service) ConfigureModpack(ctx context.Context, id, install, start string, actor servers.Actor) error {
+	cleanInstall, err := clean("install_script", install, true)
+	if err != nil {
+		return err
+	}
+	cleanStart, err := clean("start_script", start, true)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(filepath.Ext(cleanInstall), ".sh") || !strings.EqualFold(filepath.Ext(cleanStart), ".sh") {
+		return &domain.ValidationError{Field: "scripts", Message: "installer and startup must be .sh files"}
+	}
+	if cleanInstall == cleanStart {
+		return &domain.ValidationError{Field: "scripts", Message: "installer and startup scripts must be different"}
+	}
+	srv, err := s.servers.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if serverActive(srv.Status) {
+		return domain.ErrServerRunning
+	}
+	modpack, err := s.ModpackInfo(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !modpack.Supported {
+		return &domain.ValidationError{Field: "server", Message: "this server predates modpack support; create a new server to use modpacks"}
+	}
+	if !slices.Contains(modpack.Scripts, cleanInstall) || !slices.Contains(modpack.Scripts, cleanStart) {
+		return &domain.ValidationError{Field: "scripts", Message: "select scripts found in the server files"}
+	}
+	_, err = s.files.WriteText(id, ".mesquita-modpack", cleanInstall+"\n"+cleanStart+"\n", "")
+	if err == nil && modpack.Installed && modpack.InstallScript != cleanInstall {
+		if removeErr := s.files.Remove(id, ".mesquita-modpack-installed"); removeErr != nil && !errors.Is(removeErr, domain.ErrNotFound) {
+			err = removeErr
+		}
+	}
+	s.record(ctx, actor, domain.AuditModpackConfigure, srv.Name, cleanInstall+" -> "+cleanStart, err)
+	return err
+}
+
+// InstallModpack starts the managed container. Its fixed in-container wrapper runs the
+// installer once and then the startup script; later starts execute only the startup script.
+func (s *Service) InstallModpack(ctx context.Context, id string, actor servers.Actor) (servers.View, error) {
+	info, err := s.ModpackInfo(ctx, id)
+	if err != nil {
+		return servers.View{}, err
+	}
+	if !info.Supported {
+		return servers.View{}, &domain.ValidationError{Field: "server", Message: "this server predates modpack support; create a new server to use modpacks"}
+	}
+	if info.InstallScript == "" || info.StartScript == "" {
+		return servers.View{}, &domain.ValidationError{Field: "scripts", Message: "upload a server pack and configure its scripts first"}
+	}
+	if !slices.Contains(info.Scripts, info.InstallScript) || !slices.Contains(info.Scripts, info.StartScript) {
+		return servers.View{}, &domain.ValidationError{Field: "scripts", Message: "configured scripts are missing; select them again"}
+	}
+	srv, err := s.servers.Get(ctx, id)
+	if err != nil {
+		return servers.View{}, err
+	}
+	if serverActive(srv.Status) {
+		return servers.View{}, domain.ErrServerRunning
+	}
+	v, err := s.servers.Start(ctx, id, actor)
+	s.record(ctx, actor, domain.AuditModpackInstall, srv.Name, info.InstallScript, err)
+	return v, err
+}
+
+func serverActive(status domain.ServerStatus) bool {
+	return status == domain.StatusRunning || status == domain.StatusStarting || status == domain.StatusRestarting
 }
 
 // record audits a mutation. Validation failures never reach it; failures of the operation

@@ -22,6 +22,9 @@ func (fakeServers) Get(_ context.Context, id string) (servers.View, error) {
 	}
 	return servers.View{Server: domain.Server{ID: sid, Name: "Survival"}, Status: domain.StatusRunning}, nil
 }
+func (fakeServers) Start(_ context.Context, id string, _ servers.Actor) (servers.View, error) {
+	return servers.View{Server: domain.Server{ID: id, Name: "Survival"}, Status: domain.StatusRunning}, nil
+}
 
 // fakeFiles records calls; fail makes every mutation fail.
 type fakeFiles struct {
@@ -70,6 +73,9 @@ func (f *fakeFiles) Remove(id, p string) error {
 }
 func (f *fakeFiles) Extract(id, a, d string, o bool) (int, error) {
 	return 2, f.call("extract " + a + " " + d)
+}
+func (f *fakeFiles) FindShellScripts(id string) ([]string, error) {
+	return []string{}, f.call("find shell scripts")
 }
 
 type fakeAudit struct{ events []domain.AuditEvent }

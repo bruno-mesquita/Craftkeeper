@@ -252,6 +252,21 @@ Plano: `~/.claude/plans/na-tela-de-detalhes-glittery-panda.md`.
 - **Testado:** pendente — rodar `sudo make check` (`players_test.go`, `domain/players_test.go`).
   Não verificado contra Minecraft real (comandos via console, formato dos JSONs).
 
+## Modpacks — implementação inicial
+
+- ZIP é enviado pela aba Modpack usando o upload e a extração segura já existentes; colisões
+  não são sobrescritas. A UI lista `.sh` regulares e exige seleção de instalador e inicializador.
+- Seleção e estado ficam em arquivos `.mesquita-modpack*` na pasta do servidor; a listagem de
+  arquivos oculta esses metadados. Backups preservam estado e configuração.
+- Containers criados agora mantêm o launcher itzg como fallback. Com configuração de modpack,
+  o primeiro start executa o instalador como usuário sem privilégios e, em caso de sucesso,
+  inicia o script do servidor; os próximos starts executam apenas o script de inicialização.
+  Saída passa pelo console Docker já existente. Se o instalador falha, o container fica ocioso
+  para não entrar em loop de restart; parar e iniciar novamente tenta a instalação outra vez.
+- Containers criados antes deste wrapper continuam sem alteração e retornam `supported=false`.
+- **Verificação pendente:** não executada nesta implementação; falta validar compilation/contratos
+  e um ZIP de server pack real no container.
+
 ## Roadmap — Fase 1 (Foundation, referência)
 
 1. `go.mod` (`module github.com/<a definir>/mesquita-panel` ou nome local), `Makefile`, `.gitignore`; `git init` se autorizado.

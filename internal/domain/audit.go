@@ -9,13 +9,15 @@ const (
 	AuditLogout          = "auth.logout"
 	AuditPasswordChanged = "auth.password_change"
 
-	AuditServerCreate  = "server.create"
-	AuditServerUpdate  = "server.update"
-	AuditServerStart   = "server.start"
-	AuditServerStop    = "server.stop"
-	AuditServerRestart = "server.restart"
-	AuditServerKill    = "server.kill"
-	AuditServerDelete  = "server.delete"
+	AuditServerCreate     = "server.create"
+	AuditServerUpdate     = "server.update"
+	AuditServerStart      = "server.start"
+	AuditServerStop       = "server.stop"
+	AuditServerRestart    = "server.restart"
+	AuditServerKill       = "server.kill"
+	AuditServerDelete     = "server.delete"
+	AuditModpackConfigure = "modpack.configure"
+	AuditModpackInstall   = "modpack.install"
 	// AuditConsoleCommand targets "<server id>: <command>", the command truncated.
 	AuditConsoleCommand = "server.console_command"
 
