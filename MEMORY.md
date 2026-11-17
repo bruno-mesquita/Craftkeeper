@@ -67,7 +67,7 @@ Formato: decisão — motivo — consequência.
 | Fase | Escopo | Status | Notas |
 |---|---|---|---|
 | 0 | Planejamento, CLAUDE.md, MEMORY.md, SPEC | ✅ concluída | 2026-11-17 |
-| 1 | Foundation (config, SQLite, HTTP, embed, auth, dashboard inicial, systemd) | ✅ implementada e testada (2026-11-17); falta deploy systemd e conferir UI no navegador | ver medições abaixo |
+| 1 | Foundation (config, SQLite, HTTP, embed, auth, dashboard inicial, systemd) | ✅ implementada e testada (2026-11-17); UI conferida no navegador; falta deploy systemd | ver medições abaixo |
 | 2 | Monitoring (CPU, RAM, disco, rede, métricas de containers) | planejada | |
 | 3 | Server management (Docker, criação, ciclo de vida, limites) | planejada | |
 | 4 | WebSocket + console | planejada | |
@@ -85,7 +85,8 @@ Legenda de detalhe por feature (preencher ao implementar): **implementado** / **
 - E2E com curl em `127.0.0.1:8090`: setup com token → 201; segundo setup → 409; login → cookie HttpOnly + csrf; stats reais; dashboard; POST sem CSRF → 403; cross-site → 403; listagem de diretório → 404; logout → 204, depois `me` → 401.
 - Restart: banco persiste, setup não é mais exigido, token não é impresso, login ok. SIGTERM → shutdown gracioso.
 - Memória: ~53 MB RSS depois de um login (o Argon2id aloca 19 MiB, que o heap do Go retém); 12 threads. Se incomodar, avaliar `GOMEMLIMIT` / `debug.FreeOSMemory` — medir antes.
-- **Não verificado:** UI no navegador (renderização, navegação por teclado, contraste). Fazer com o painel em `make run` + túnel SSH.
+- UI no navegador: abriu e funcionou pelo Tailscale (`make run RUN_LISTEN=127.0.0.1:8090,100.126.54.17:8090`), confirmado pelo usuário em 2026-11-17. Ainda não auditado: navegação por teclado e contraste.
+- Acesso: `make run` só escuta em 127.0.0.1 por padrão; do PC do usuário, usar Tailscale (`RUN_LISTEN`) ou túnel SSH. `localhost` no PC ≠ servidor.
 - **Não feito:** deploy no systemd (seguir `docs/INSTALL.md`, precisa sudo e autorização).
 - **Desvios do roadmap:** sem middleware de request id; componente dialog não criado (não havia uso — criar quando aparecer ação destrutiva, Fase 3).
 
