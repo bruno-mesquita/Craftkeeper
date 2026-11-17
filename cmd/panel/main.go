@@ -84,7 +84,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	monitoringSvc := monitoring.NewService(metrics.NewLinux("/proc", cfg.DataDir), metricsCacheTTL)
+	monitoringSvc := monitoring.NewService(metrics.NewLinux("/proc", cfg.DataDir), docker.NewStatsCollector(dockerClient, log), metricsCacheTTL)
 	dashboardSvc := dashboard.NewService(dockerClient, auditLog)
 
 	handler := httpapi.New(authSvc, monitoringSvc, dashboardSvc, web.FS, log).Handler()

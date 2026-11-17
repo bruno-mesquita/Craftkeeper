@@ -90,6 +90,30 @@ Cached for 2 s. Network totals exclude `lo`, `veth*`, `docker*`, `br-*`, `virbr*
 }
 ```
 
+### `GET /system/containers` — auth
+Metrics of containers labelled `mesquita.managed=true` only (other containers on the host are
+never listed). Cached for 2 s. Containers that are not running are listed with zero metrics.
+`cpu_percent` uses 100 per core (a container using two full cores reports 200). CPU and network
+rates are computed between samples, so the first sample of a container reports 0.
+`memory.used_bytes` excludes reclaimable page cache, like `docker stats`.
+`server_id` is the `mesquita.server_id` label (empty string when absent).
+`containers` is always an array (empty when there are none).
+```json
+{
+  "collected_at": "2026-11-17T12:00:00.123Z",
+  "containers": [
+    {
+      "id": "64-char hex", "name": "mesquita-srv-1", "server_id": "1", "state": "running",
+      "cpu_percent": 12.5,
+      "memory": { "used_bytes": 0, "limit_bytes": 0 },
+      "network": { "rx_bytes": 0, "tx_bytes": 0, "rx_bytes_per_second": 0, "tx_bytes_per_second": 0 },
+      "block_io": { "read_bytes": 0, "write_bytes": 0 }
+    }
+  ]
+}
+```
+Errors: `503 docker_unavailable` when the Docker daemon cannot be reached.
+
 ### `GET /dashboard` — auth
 ```json
 {

@@ -1,4 +1,4 @@
-// Package monitoring serves host resource metrics with a short cache.
+// Package monitoring serves host and container resource metrics with a short cache.
 package monitoring
 
 import (
@@ -14,31 +14,60 @@ type Collector interface {
 	Collect(ctx context.Context) (domain.SystemStats, error)
 }
 
-// Service caches the latest sample for ttl so concurrent dashboards share one collection.
-type Service struct {
-	collector Collector
-	ttl       time.Duration
-	now       func() time.Time
-
-	mu     sync.Mutex
-	cached domain.SystemStats
-	at     time.Time
+// ContainerCollector samples metrics of the containers managed by the panel.
+type ContainerCollector interface {
+	CollectContainers(ctx context.Context) (domain.ContainerSnapshot, error)
 }
 
-func NewService(c Collector, ttl time.Duration) *Service {
-	return &Service{collector: c, ttl: ttl, now: time.Now}
+// Service caches the latest samples for ttl so concurrent dashboards share one collection.
+type Service struct {
+	host       *ttlCache[domain.SystemStats]
+	containers *ttlCache[domain.ContainerSnapshot]
+}
+
+func NewService(host Collector, containers ContainerCollector, ttl time.Duration) *Service {
+	return &Service{
+		host:       newTTLCache(ttl, host.Collect),
+		containers: newTTLCache(ttl, containers.CollectContainers),
+	}
 }
 
 func (s *Service) Stats(ctx context.Context) (domain.SystemStats, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !s.at.IsZero() && s.now().Sub(s.at) < s.ttl {
-		return s.cached, nil
+	return s.host.get(ctx)
+}
+
+// Containers returns managed container metrics, or domain.ErrDockerUnavailable.
+func (s *Service) Containers(ctx context.Context) (domain.ContainerSnapshot, error) {
+	return s.containers.get(ctx)
+}
+
+// ttlCache serializes collections and reuses a successful result for ttl.
+// Errors are not cached, so recovery is visible on the next call.
+type ttlCache[T any] struct {
+	ttl     time.Duration
+	collect func(context.Context) (T, error)
+	now     func() time.Time
+
+	mu     sync.Mutex
+	cached T
+	at     time.Time
+}
+
+func newTTLCache[T any](ttl time.Duration, collect func(context.Context) (T, error)) *ttlCache[T] {
+	return &ttlCache[T]{ttl: ttl, collect: collect, now: time.Now}
+}
+
+func (c *ttlCache[T]) get(ctx context.Context) (T, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.at.IsZero() && c.now().Sub(c.at) < c.ttl {
+		return c.cached, nil
 	}
-	st, err := s.collector.Collect(ctx)
+	v, err := c.collect(ctx)
 	if err != nil {
-		return domain.SystemStats{}, err
+		var zero T
+		return zero, err
 	}
-	s.cached, s.at = st, s.now()
-	return st, nil
+	c.cached, c.at = v, c.now()
+	return v, nil
 }

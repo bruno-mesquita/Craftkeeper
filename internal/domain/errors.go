@@ -11,6 +11,7 @@ var (
 	ErrRateLimited        = errors.New("rate limited")
 	ErrSetupCompleted     = errors.New("setup already completed")
 	ErrSetupTokenInvalid  = errors.New("invalid setup token")
+	ErrDockerUnavailable  = errors.New("docker unavailable")
 )
 
 // ValidationError describes which input field is invalid. It wraps ErrInvalidInput.

@@ -51,6 +51,9 @@ func writeDomainError(w http.ResponseWriter, log *slog.Logger, err error) {
 		writeError(w, http.StatusConflict, "setup_completed", "initial setup has already been completed")
 	case errors.Is(err, domain.ErrSetupTokenInvalid):
 		writeError(w, http.StatusForbidden, "setup_token_invalid", "invalid setup token")
+	case errors.Is(err, domain.ErrDockerUnavailable):
+		log.Warn("docker unavailable", "err", err)
+		writeError(w, http.StatusServiceUnavailable, "docker_unavailable", "Docker is not reachable")
 	case errors.Is(err, domain.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "resource not found")
 	default:

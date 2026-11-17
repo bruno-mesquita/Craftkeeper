@@ -21,7 +21,7 @@ O repositório está **no próprio servidor de produção**.
 | Domínio | brunomesquita.dev (Minecraft: minecraft.brunomesquita.dev) |
 | Go | **não instalado** (build via container) |
 | make | instalado pelo usuário (2026-11-17) |
-| Docker | instalado; usuário `bruno-mesquita` **sem acesso** a `/var/run/docker.sock` |
+| Docker | Engine 29.10.0, API 1.57 (mínima 1.40), containerd v2.4.2; usuário `bruno-mesquita` **sem acesso** a `/var/run/docker.sock` |
 | Dados Crafty | `/home/bruno-mesquita/docker/` — **não tocar** |
 | Portas TCP ocupadas | 22, 80, 443, 6881, 7878, 8080, 8096, 8123, 8443, 9696, 25500–25600, 127.0.0.1:8787, 127.0.0.1:35353 |
 | Porta livre escolhida | **8090** |
@@ -46,6 +46,9 @@ Formato: decisão — motivo — consequência.
 - **D13 · Argon2id m=19 MiB, t=2, p=1 + semáforo de 2 hashes** — mínimo OWASP, pico de RAM baixo; verify lê parâmetros do hash armazenado e recusa parâmetros absurdos.
 - **D14 · Timestamps INTEGER (Unix s, UTC) no SQLite; RFC 3339 na API** — portável para Rust, comparável em SQL.
 - **D15 · Sem goroutines de fundo na Fase 1** — limpeza de sessões expiradas acontece no login; CPU/rede calculados por delta entre chamadas (cache de 2 s).
+- **D16 · Engine API fixa em `/v1.44`** — Docker Engine 25+, já tem stats `one-shot` (≥ 1.41); sem negociação via `/version`. Host: Engine 29.10.0, API 1.57 (mínima 1.40), verificado em 2026-11-17. — Revisar só se um daemon futuro subir a versão mínima acima de 1.44.
+- **D17 · Métricas só de containers `mesquita.managed=true`** (escolha do usuário, 2026-11-17) — spec §11. — Filtro no daemon **e** revalidação da label + formato do ID no cliente. Ainda não cruza `mesquita.server_id` com o banco: não existe tabela `servers` até a Fase 3, que adiciona esse cruzamento antes de qualquer ação.
+- **D18 · Sem histórico de métricas** (escolha do usuário) — só tempo real por polling (3 s) até a Fase 4 trocar por WebSocket; sem goroutine de fundo. CPU/rede de container por delta entre coletas (primeira amostra = 0), mapa de amostras podado a cada coleta.
 - **D10 · systemd com usuário dedicado `mesquita-panel`** — princípio do menor privilégio. — Precisa estar no grupo `docker` (root-equivalente) a partir da Fase 3; criação do usuário e grupo exige autorização no deploy.
 
 ---
@@ -56,7 +59,7 @@ Formato: decisão — motivo — consequência.
 - [x] Versões pinadas: Go `golang:1.27.4-trixie`, Tailwind CLI v4.3.5 (SHA-256 no Makefile), `modernc.org/sqlite` v1.61.1, `golang.org/x/crypto` v0.58.0.
 - [x] `make` instalado. Fluxo: usuário roda `sudo make check` num terminal próprio; Claude lê `.cache/last-run.log`.
 - [ ] Cookie `Secure` exige HTTPS: avaliar `tailscale serve` para TLS no acesso remoto.
-- [x] Git: branch `main`, módulo `github.com/bruno-mesquita/mesquita-panel`, identidade configurada. Commit `9ac97e6` (Fase 1) **só local** — não fazer push sem o usuário pedir (ele ainda vai instalar o `gh`).
+- [x] Git: branch `main`, módulo `github.com/bruno-mesquita/mesquita-panel`, identidade configurada. Commits (Fases 1 e 2) **só locais** — não fazer push sem o usuário pedir (ele ainda vai instalar o `gh`).
 - [ ] `.data/` local contém um banco de teste (usuário `bruno`, senha `senha-de-teste-123`) — rodar `make clean` antes de testar a UI de verdade.
 - [ ] Confirmar o que ocupa 8080 (provável stack de mídia), só para documentação.
 
@@ -68,7 +71,7 @@ Formato: decisão — motivo — consequência.
 |---|---|---|---|
 | 0 | Planejamento, CLAUDE.md, MEMORY.md, SPEC | ✅ concluída | 2026-11-17 |
 | 1 | Foundation (config, SQLite, HTTP, embed, auth, dashboard inicial, systemd) | ✅ implementada e testada (2026-11-17); UI conferida no navegador; falta deploy systemd | ver medições abaixo |
-| 2 | Monitoring (CPU, RAM, disco, rede, métricas de containers) | planejada | |
+| 2 | Monitoring (CPU, RAM, disco, rede, métricas de containers) | ✅ implementada e verificada (2026-11-17) | ver Fase 2 abaixo |
 | 3 | Server management (Docker, criação, ciclo de vida, limites) | planejada | |
 | 4 | WebSocket + console | planejada | |
 | 5 | File manager | planejada | |
@@ -90,22 +93,25 @@ Legenda de detalhe por feature (preencher ao implementar): **implementado** / **
 - **Não feito:** deploy no systemd (seguir `docs/INSTALL.md`, precisa sudo e autorização).
 - **Desvios do roadmap:** sem middleware de request id; componente dialog não criado (não havia uso — criar quando aparecer ação destrutiva, Fase 3).
 
-## Fase 2 — ponto de partida (próxima sessão)
+## Fase 2 — estado (2026-11-17)
 
-Escopo da spec §17: CPU, RAM, disco, rede (✅ já existem desde a Fase 1 em `/api/v1/system/stats`)
-**+ métricas de containers Docker** (o que falta de fato).
+- **Implementado:** `GET /api/v1/system/containers` (`docs/API.md`); `docker.StatsCollector`
+  (`internal/infrastructure/docker/stats.go`: list com filtro de label + stats `one-shot`,
+  concorrência 4, body ≤ 64 KiB por stats e ≤ 1 MiB na listagem); `monitoring.Service` com
+  `ttlCache[T]` genérico (host + containers); `ErrDockerUnavailable` → `503 docker_unavailable`;
+  tabela "Containers" no Overview (estado vazio e "Docker unreachable").
+- **Testado:** `sudo make check` passou (daemon Docker falso em unix socket — `stats_test.go`;
+  cache TTL — `monitoring/service_test.go`; contrato HTTP — `TestContainerStats`).
+- **Verificado de verdade (usuário, 2026-11-17):** container `mesquita-test-stats` com label
+  `mesquita.managed=true` + `sudo make run` → apareceu na tabela Containers do Overview; Crafty e servidores Minecraft **não** apareceram (filtro por label ok); `make clean` depois.
 
-**Decisões a perguntar ao usuário antes de codar:**
-1. **Quais containers mostrar?** Só os `mesquita.managed=true` (spec §11; hoje não existe nenhum — só nascem na Fase 3) **ou** visão somente-leitura de todos (incluindo Crafty/Minecraft)? Ler stats não altera nada, mas a spec diz para nunca assumir que um container é nosso. Recomendação: só gerenciados + filtro por label, e testar com um container de teste criado pelo usuário com label `mesquita.managed=true` e nome `mesquita-test-*`.
-2. **Acesso ao Docker em dev:** o binário rodando como `bruno-mesquita` não alcança o `docker.sock`. Opções: testes com socket Docker falso (`httptest` sobre unix socket) — sempre — e verificação real rodada pelo usuário (`sudo make run` roda o painel como root: aceitável só para teste local, ou rodar via systemd com `SupplementaryGroups=docker`, que é root-equivalente e exige autorização).
-3. **Histórico/sparklines?** A spec não pede persistência de séries; manter só tempo real (polling até a Fase 4 trocar por WebSocket) salvo pedido do usuário.
+## Fase 3 — ponto de partida
 
-**Notas técnicas para a implementação:**
-- Docker stats: `GET /containers/{id}/stats?stream=false&one-shot=true` (API ≥ 1.41) evita a espera de ~1–2 s por container do `stream=false` sozinho; CPU% = delta `cpu_usage.total_usage` / delta `system_cpu_usage` × `online_cpus` × 100 (precisa de duas amostras — mesmo padrão de delta do coletor Linux).
-- Listar com `GET /containers/json?filters={"label":["mesquita.managed=true"]}`; negociar versão via `GET /version` ou fixar uma versão mínima de API no path (`/v1.41/...`).
-- Concorrência limitada ao coletar N containers (semáforo pequeno), cache curto como no `monitoring.Service`.
-- Novo port no `application/monitoring` (ex.: `ContainerStatsReader`) implementado em `infrastructure/docker`; contrato novo documentado em `docs/API.md` + teste de contrato.
-- Opcional e barato: discos adicionais / rede por interface — só se o usuário quiser.
+Spec §17: Docker integration, criação de servidor, ciclo de vida (start/stop/restart/kill), limites.
+- Tabela `servers` (migration `0002`), e cruzar `mesquita.server_id` com o banco (D17) antes de qualquer ação.
+- Reusar `docker.Client.getJSON` / labels `LabelManaged` / `LabelServerID` / `validContainerID`; operações mutantes entram na allowlist uma a uma.
+- Componente dialog (ações destrutivas), contagem de servidores no `/dashboard`.
+- Deploy systemd precisa do grupo `docker` (D10) — pedir autorização.
 
 ## Roadmap — Fase 1 (Foundation, referência)
 

@@ -1,4 +1,4 @@
-// Dashboard: live host metrics (polled; moves to WebSocket in phase 4) and recent events.
+// Dashboard: live host and container metrics (polled; moves to WebSocket in phase 4) and recent events.
 import { api } from '../api.js';
 import { h } from '../dom.js';
 import { bytes, dateTime, percent, rate } from '../format.js';
@@ -41,15 +41,19 @@ export function mount(root) {
   const updated = h('p', { class: 'text-xs text-muted', 'aria-live': 'off' });
   const docker = h('span', { class: 'badge' }, 'Docker: checking…');
   const events = h('tbody');
+  const containers = h('tbody');
 
   root.replaceChildren(
     h('div', { class: 'mb-6 flex flex-wrap items-center justify-between gap-3' },
       h('h1', { class: 'text-xl font-semibold' }, 'Overview'),
       h('div', { class: 'flex items-center gap-3' }, updated, docker)),
     h('div', { class: 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4' }, cpu.card, mem.card, disk.card, net.card),
-    h('section', { class: 'card mt-6' },
-      h('h2', { class: 'mb-3 font-semibold' }, 'Servers'),
-      h('p', { class: 'text-muted' }, 'Server management arrives in phase 3.')),
+    h('section', { class: 'card mt-6 overflow-x-auto' },
+      h('h2', { class: 'mb-3 font-semibold' }, 'Containers'),
+      h('table', { class: 'w-full text-left' },
+        h('thead', { class: 'text-xs text-muted' },
+          h('tr', null, ['Name', 'State', 'CPU', 'Memory', 'Network'].map((c) => h('th', { class: 'pb-2 font-medium', scope: 'col' }, c)))),
+        containers)),
     h('section', { class: 'card mt-6 overflow-x-auto' },
       h('h2', { class: 'mb-3 font-semibold' }, 'Recent events'),
       h('table', { class: 'w-full text-left' },
@@ -69,6 +73,31 @@ export function mount(root) {
       updated.textContent = `Updated ${new Date(s.collected_at).toLocaleTimeString()}`;
     } catch (err) {
       updated.textContent = `Metrics unavailable: ${err.message}`;
+    }
+  }
+
+  const containerMessage = (text) => containers.replaceChildren(
+    h('tr', null, h('td', { class: 'py-2 text-muted', colspan: '5' }, text)));
+
+  async function refreshContainers() {
+    try {
+      const { containers: list } = await api('GET', '/system/containers');
+      if (!list.length) {
+        containerMessage('No managed containers yet. Servers arrive in phase 3.');
+        return;
+      }
+      containers.replaceChildren(...list.map((c) => {
+        const running = c.state === 'running';
+        const cell = (text, cls = '') => h('td', { class: `py-2 pr-4 whitespace-nowrap tabular-nums ${cls}` }, running ? text : '—');
+        return h('tr', { class: 'border-t border-border' },
+          h('td', { class: 'py-2 pr-4 font-mono text-xs' }, c.name),
+          h('td', { class: `py-2 pr-4 ${running ? 'text-success' : 'text-muted'}` }, c.state),
+          cell(percent(c.cpu_percent)),
+          cell(`${bytes(c.memory.used_bytes)} of ${bytes(c.memory.limit_bytes)}`),
+          cell(`↓ ${rate(c.network.rx_bytes_per_second)} ↑ ${rate(c.network.tx_bytes_per_second)}`));
+      }));
+    } catch (err) {
+      containerMessage(err.code === 'docker_unavailable' ? 'Docker unreachable.' : `Container metrics unavailable: ${err.message}`);
     }
   }
 
@@ -95,8 +124,13 @@ export function mount(root) {
   const start = () => {
     stop();
     refreshStats();
+    refreshContainers();
     refreshDashboard();
-    timers = [setInterval(refreshStats, STATS_INTERVAL_MS), setInterval(refreshDashboard, DASHBOARD_INTERVAL_MS)];
+    timers = [
+      setInterval(refreshStats, STATS_INTERVAL_MS),
+      setInterval(refreshContainers, STATS_INTERVAL_MS),
+      setInterval(refreshDashboard, DASHBOARD_INTERVAL_MS),
+    ];
   };
   const stop = () => {
     timers.forEach(clearInterval);

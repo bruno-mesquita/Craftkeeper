@@ -6,6 +6,7 @@ package httpapi_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -42,6 +43,16 @@ func (stubCollector) Collect(context.Context) (domain.SystemStats, error) {
 	}, nil
 }
 
+// stubContainers returns a fixed snapshot, or err when set.
+type stubContainers struct {
+	snap domain.ContainerSnapshot
+	err  error
+}
+
+func (s stubContainers) CollectContainers(context.Context) (domain.ContainerSnapshot, error) {
+	return s.snap, s.err
+}
+
 type client struct {
 	t    *testing.T
 	base string
@@ -50,6 +61,11 @@ type client struct {
 }
 
 func newServer(t *testing.T) *client {
+	t.Helper()
+	return newServerWith(t, stubContainers{snap: domain.ContainerSnapshot{CollectedAt: time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)}})
+}
+
+func newServerWith(t *testing.T, containers monitoring.ContainerCollector) *client {
 	t.Helper()
 	store, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "db.sqlite"), migrations.FS)
 	if err != nil {
@@ -69,7 +85,7 @@ func newServer(t *testing.T) *client {
 		"assets/css/app.css": {Data: []byte("body{}")},
 	}
 	api := httpapi.New(authSvc,
-		monitoring.NewService(stubCollector{}, time.Second),
+		monitoring.NewService(stubCollector{}, containers, time.Second),
 		dashboard.NewService(docker.NewClient(filepath.Join(t.TempDir(), "no-docker.sock")), audit),
 		static, log)
 
@@ -284,4 +300,42 @@ func TestStatsAndDashboard(t *testing.T) {
 	if first := events[0].(map[string]any); first["action"] != "auth.login" || first["success"] != true {
 		t.Fatalf("most recent event: %v", first)
 	}
+}
+
+func TestContainerStats(t *testing.T) {
+	c := newServer(t)
+	res, body := c.do("GET", "/api/v1/system/containers", nil, nil)
+	expect(t, res, body, http.StatusUnauthorized, "unauthenticated")
+
+	c.setupAndLogin()
+	res, body = c.do("GET", "/api/v1/system/containers", nil, nil)
+	expect(t, res, body, http.StatusOK, "")
+	if list, ok := body["containers"].([]any); !ok || len(list) != 0 || body["collected_at"] != "2026-11-17T12:00:00Z" {
+		t.Fatalf("empty snapshot must be an empty array: %v", body)
+	}
+
+	c = newServerWith(t, stubContainers{snap: domain.ContainerSnapshot{
+		CollectedAt: time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC),
+		Containers: []domain.ContainerStats{{
+			ID: "abc", Name: "mesquita-srv", ServerID: "7", State: "running", CPUPercent: 12.5,
+			MemoryUsedBytes: 100, MemoryLimitBytes: 200, NetRxBytes: 1, NetTxBytes: 2,
+			NetRxBytesPerSecond: 3, NetTxBytesPerSecond: 4, BlockReadBytes: 5, BlockWriteBytes: 6,
+		}},
+	}})
+	c.setupAndLogin()
+	res, body = c.do("GET", "/api/v1/system/containers", nil, nil)
+	expect(t, res, body, http.StatusOK, "")
+	got, _ := json.Marshal(body["containers"])
+	want := `[{"block_io":{"read_bytes":5,"write_bytes":6},"cpu_percent":12.5,"id":"abc",` +
+		`"memory":{"limit_bytes":200,"used_bytes":100},"name":"mesquita-srv",` +
+		`"network":{"rx_bytes":1,"rx_bytes_per_second":3,"tx_bytes":2,"tx_bytes_per_second":4},` +
+		`"server_id":"7","state":"running"}]`
+	if string(got) != want {
+		t.Fatalf("containers:\n got %s\nwant %s", got, want)
+	}
+
+	c = newServerWith(t, stubContainers{err: fmt.Errorf("%w: dial unix: no such file", domain.ErrDockerUnavailable)})
+	c.setupAndLogin()
+	res, body = c.do("GET", "/api/v1/system/containers", nil, nil)
+	expect(t, res, body, http.StatusServiceUnavailable, "docker_unavailable")
 }

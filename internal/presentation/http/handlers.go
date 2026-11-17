@@ -160,6 +160,50 @@ func (a *API) systemStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, d)
 }
 
+type containerStatsDTO struct {
+	ID         string  `json:"id"`
+	Name       string  `json:"name"`
+	ServerID   string  `json:"server_id"`
+	State      string  `json:"state"`
+	CPUPercent float64 `json:"cpu_percent"`
+	Memory     struct {
+		UsedBytes  uint64 `json:"used_bytes"`
+		LimitBytes uint64 `json:"limit_bytes"`
+	} `json:"memory"`
+	Network struct {
+		RxBytes          uint64  `json:"rx_bytes"`
+		TxBytes          uint64  `json:"tx_bytes"`
+		RxBytesPerSecond float64 `json:"rx_bytes_per_second"`
+		TxBytesPerSecond float64 `json:"tx_bytes_per_second"`
+	} `json:"network"`
+	BlockIO struct {
+		ReadBytes  uint64 `json:"read_bytes"`
+		WriteBytes uint64 `json:"write_bytes"`
+	} `json:"block_io"`
+}
+
+func (a *API) containerStats(w http.ResponseWriter, r *http.Request) {
+	snap, err := a.monitoring.Containers(r.Context())
+	if err != nil {
+		writeDomainError(w, a.log, err)
+		return
+	}
+	list := make([]containerStatsDTO, 0, len(snap.Containers))
+	for _, c := range snap.Containers {
+		var d containerStatsDTO
+		d.ID, d.Name, d.ServerID, d.State, d.CPUPercent = c.ID, c.Name, c.ServerID, c.State, c.CPUPercent
+		d.Memory.UsedBytes, d.Memory.LimitBytes = c.MemoryUsedBytes, c.MemoryLimitBytes
+		d.Network.RxBytes, d.Network.TxBytes = c.NetRxBytes, c.NetTxBytes
+		d.Network.RxBytesPerSecond, d.Network.TxBytesPerSecond = c.NetRxBytesPerSecond, c.NetTxBytesPerSecond
+		d.BlockIO.ReadBytes, d.BlockIO.WriteBytes = c.BlockReadBytes, c.BlockWriteBytes
+		list = append(list, d)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"collected_at": snap.CollectedAt.UTC().Format(time.RFC3339Nano),
+		"containers":   list,
+	})
+}
+
 type auditEventDTO struct {
 	ID        int64  `json:"id"`
 	CreatedAt string `json:"created_at"`

@@ -38,6 +38,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/password", a.requireAuth(a.changePassword))
 
 	mux.HandleFunc("GET /api/v1/system/stats", a.requireAuth(a.systemStats))
+	mux.HandleFunc("GET /api/v1/system/containers", a.requireAuth(a.containerStats))
 	mux.HandleFunc("GET /api/v1/dashboard", a.requireAuth(a.dashboardOverview))
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
