@@ -238,6 +238,20 @@ Plano: `~/.claude/plans/a-pr-xima-a-reactive-minsky.md`. Decisões D43–D45.
   restart (`unless-stopped`, comportamento já existente); com fabric-api 0.141.6 sobe com
   43 mods e o jogador conecta.
 
+## Aba Players — whitelist/banlist (2026-11-17)
+
+Plano: `~/.claude/plans/na-tela-de-detalhes-glittery-panda.md`.
+- **Decisão:** rodando (running/starting) → mudanças via console stdin (o jogo dono dos
+  arquivos resolve UUID e persiste); parado → edita `whitelist.json` / `banned-*.json` /
+  `server.properties` pelo adapter `os.Root`. Parado + `online-mode` != `false` → 422 (UUID
+  offline seria errado; painel não consulta a Mojang). Leitura sempre dos arquivos. Switch:
+  `whitelist on|off` ou `white-list`+`enforce-whitelist`.
+- **Implementado:** `domain/players.go`, `application/players`, `presentation/http/players.go`
+  (7 rotas, `docs/API.md` "Players"), `web/assets/js/player-manager.js` + aba em `pages/server.js`,
+  auditoria `whitelist.*`, `player.*`, `ip.*`.
+- **Testado:** pendente — rodar `sudo make check` (`players_test.go`, `domain/players_test.go`).
+  Não verificado contra Minecraft real (comandos via console, formato dos JSONs).
+
 ## Roadmap — Fase 1 (Foundation, referência)
 
 1. `go.mod` (`module github.com/<a definir>/mesquita-panel` ou nome local), `Makefile`, `.gitignore`; `git init` se autorizado.

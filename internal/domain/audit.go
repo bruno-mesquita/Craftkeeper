@@ -33,6 +33,15 @@ const (
 	AuditBackupRestore  = "backup.restore"
 	AuditBackupDelete   = "backup.delete"
 	AuditBackupSchedule = "backup.schedule_update"
+
+	// Player list actions target "<server name>: <player name or IP>" (toggle: "on" or "off").
+	AuditWhitelistToggle = "whitelist.toggle"
+	AuditWhitelistAdd    = "whitelist.add"
+	AuditWhitelistRemove = "whitelist.remove"
+	AuditPlayerBan       = "player.ban"
+	AuditPlayerPardon    = "player.pardon"
+	AuditIPBan           = "ip.ban"
+	AuditIPPardon        = "ip.pardon"
 )
 
 type AuditEvent struct {

@@ -395,6 +395,51 @@ Body `{"interval_hours", "retain"}` (both required). The next run is one interva
 when only `retain` changes, the planned run is kept.
 `200 BackupSchedule` · `422 validation_failed` (`interval_hours`, `retain`).
 
+## Players
+
+Whitelist and ban lists of a Minecraft server. The lists are read from the game's files
+(`whitelist.json`, `banned-players.json`, `banned-ips.json`, and `white-list` in
+`server.properties`), so they show what is on disk.
+
+- **Running (or starting) server:** every change is sent to the game console (`whitelist
+  on|off|add|remove`, `ban`, `pardon`, `ban-ip`, `pardon-ip`), because the running game owns
+  those files and rewrites them. The game resolves UUIDs; it may write its files a moment
+  after the `204`. The commands also appear as `server.console_command` in the audit log.
+- **Stopped server (or missing container):** the files are edited directly. The whitelist
+  switch sets `white-list` and `enforce-whitelist` in `server.properties`, keeping its other
+  lines. Adding a player or a player ban needs a UUID: only offline-mode servers
+  (`online-mode=false` in `server.properties`) get one computed by the panel; otherwise
+  `422 validation_failed` (field `name`) asks for the server to be started. Removals and IP
+  bans never need a UUID.
+- Restarting servers answer `409 server_busy`; without Docker, `503 docker_unavailable`.
+- A list file that is not a valid JSON array is never overwritten: `422 validation_failed`
+  (field is the file name).
+- Removing something that is not on the list succeeds (idempotent). Names are matched
+  case-insensitively.
+
+Audit: `whitelist.toggle` (target `<server name>: on|off`), `whitelist.add`,
+`whitelist.remove`, `player.ban`, `player.pardon`, `ip.ban`, `ip.pardon` (target
+`<server name>: <player name or IP>`).
+
+### `GET /servers/{id}/players` — auth
+`200 {"whitelist": {"enabled": bool, "players": [{"uuid", "name"}]}, "banned_players":
+[{"uuid", "name", "created", "source", "expires", "reason"}], "banned_ips": [{"ip",
+"created", "source", "expires", "reason"}]}`. `created`, `source` and `expires` are the
+game's own strings (`expires` is `forever` for panel-made bans).
+
+### `PUT /servers/{id}/players/whitelist` — auth + CSRF
+Body `{"enabled": bool}`. `204`.
+
+### `POST` / `DELETE /servers/{id}/players/whitelist` — auth + CSRF
+Body `{"name"}`: 1 to 16 letters, digits or underscores. `204` · `422 validation_failed`.
+
+### `POST` / `DELETE /servers/{id}/players/bans` — auth + CSRF
+Body `{"name", "reason"}` (`reason` optional, at most 200 characters, one line, ignored by
+`DELETE`). `204` · `422 validation_failed`.
+
+### `POST` / `DELETE /servers/{id}/players/ip-bans` — auth + CSRF
+Body `{"ip", "reason"}` (IPv4 or IPv6; `reason` as above). `204` · `422 validation_failed`.
+
 ## WebSocket
 
 ### `GET /ws` — auth

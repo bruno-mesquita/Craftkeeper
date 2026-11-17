@@ -12,6 +12,7 @@ import (
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/files"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/installers"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/monitoring"
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/players"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
 	wspres "github.com/bruno-mesquita/mesquita-panel/internal/presentation/websocket"
 )
@@ -25,14 +26,15 @@ type API struct {
 	installers *installers.Service
 	files      *files.Service
 	backups    *backups.Service
+	players    *players.Service
 	ws         *wspres.Hub
 	static     fs.FS
 	log        *slog.Logger
 }
 
 func New(a *auth.Service, m *monitoring.Service, d *dashboard.Service, s *servers.Service, i *installers.Service,
-	f *files.Service, b *backups.Service, ws *wspres.Hub, static fs.FS, log *slog.Logger) *API {
-	return &API{auth: a, monitoring: m, dashboard: d, servers: s, installers: i, files: f, backups: b, ws: ws,
+	f *files.Service, b *backups.Service, p *players.Service, ws *wspres.Hub, static fs.FS, log *slog.Logger) *API {
+	return &API{auth: a, monitoring: m, dashboard: d, servers: s, installers: i, files: f, backups: b, players: p, ws: ws,
 		static: static, log: log}
 }
 
@@ -85,6 +87,8 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/servers/{id}/backups/{backupID}/download", backupRoute(a.downloadBackup))
 	mux.HandleFunc("POST /api/v1/servers/{id}/backups/{backupID}/restore", backupRoute(a.restoreBackup))
 	mux.HandleFunc("DELETE /api/v1/servers/{id}/backups/{backupID}", backupRoute(a.deleteBackup))
+
+	a.playerRoutes(mux, fileRoute)
 
 	mux.HandleFunc("GET /api/v1/ws", a.requireAuth(a.websocket))
 

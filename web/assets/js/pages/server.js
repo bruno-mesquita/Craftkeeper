@@ -1,11 +1,12 @@
 // Server page: header with live status and lifecycle actions, then tabs: the live console
-// (WebSocket channel server:<id>, docs/WEBSOCKET.md), the file manager and backups. Usage is
+// (WebSocket channel server:<id>, docs/WEBSOCKET.md), the file manager backups and players. Usage is
 // polled over REST.
 import { api, ApiError } from '../api.js';
 import { h, toast } from '../dom.js';
 import { bytes, percent } from '../format.js';
 import { mountBackupManager } from '../backup-manager.js';
 import { mountFileManager } from '../file-manager.js';
+import { mountPlayerManager } from '../player-manager.js';
 import { ACTIONS, ACTIVE, STATUS, confirmAction, gameVersion, lifecycleActions, runAction } from '../server-actions.js';
 import * as ws from '../ws.js';
 
@@ -64,13 +65,16 @@ export function mount(root, { param: id }) {
   let files = null; // file manager, mounted on first use
   const backupsPanel = h('section', { class: 'card', id: 'panel-backups', role: 'tabpanel', 'aria-labelledby': 'tab-backups', hidden: true });
   let backups = null; // backup manager, mounted on first use
+  const playersPanel = h('section', { class: 'card', id: 'panel-players', role: 'tabpanel', 'aria-labelledby': 'tab-players', hidden: true });
+  let players = null; // player manager, mounted on first use
 
   const tabButtons = {
     console: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-console', 'aria-controls': 'panel-console' }, 'Console'),
     files: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-files', 'aria-controls': 'panel-files' }, 'Files'),
     backups: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-backups', 'aria-controls': 'panel-backups' }, 'Backups'),
+    players: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-players', 'aria-controls': 'panel-players' }, 'Players'),
   };
-  const panels = { console: consolePanel, files: filesPanel, backups: backupsPanel };
+  const panels = { console: consolePanel, files: filesPanel, backups: backupsPanel, players: playersPanel };
 
   function showTab(name) {
     for (const [n, b] of Object.entries(tabButtons)) {
@@ -84,6 +88,12 @@ export function mount(root, { param: id }) {
     if (name === 'files' && !files) {
       files = mountFileManager(filesPanel, { id });
       files.setRunning(Boolean(server && ACTIVE.has(server.status)));
+    }
+    if (name === 'players' && !players) {
+      players = mountPlayerManager(playersPanel, { id });
+      players.setRunning(Boolean(server && ACTIVE.has(server.status)));
+    } else if (name === 'players') {
+      players.refresh();
     }
     if (name === 'backups') {
       if (!backups) {
@@ -117,7 +127,8 @@ export function mount(root, { param: id }) {
     tablist,
     consolePanel,
     filesPanel,
-    backupsPanel);
+    backupsPanel,
+    playersPanel);
   showTab('console');
 
   // --- header -------------------------------------------------------------------------
@@ -136,6 +147,7 @@ export function mount(root, { param: id }) {
     renderInput();
     files?.setRunning(ACTIVE.has(server.status));
     backups?.setRunning(ACTIVE.has(server.status));
+    players?.setRunning(ACTIVE.has(server.status));
   }
 
   async function act(action) {
@@ -164,6 +176,7 @@ export function mount(root, { param: id }) {
         consolePanel.hidden = true;
         filesPanel.hidden = true;
         backupsPanel.hidden = true;
+        playersPanel.hidden = true;
         return;
       }
       notice.hidden = false;
@@ -305,6 +318,7 @@ export function mount(root, { param: id }) {
     offState();
     unsubscribe();
     backups?.destroy();
+    players?.destroy();
     document.querySelectorAll('dialog.dialog').forEach((d) => d.close());
   };
 }

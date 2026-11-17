@@ -23,6 +23,7 @@ import (
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/files"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/installers"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/monitoring"
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/players"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
 	"github.com/bruno-mesquita/mesquita-panel/internal/config"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/docker"
@@ -120,6 +121,7 @@ func run() error {
 		<-eventsDone
 		consoleSvc.Close()
 	}()
+	playersSvc := players.NewService(serverFiles, serversSvc, consoleSvc, auditLog)
 	hub := wspres.NewHub(authSvc, consoleSvc, log)
 
 	// Backups pause a running game's saving through the console, so they end before it.
@@ -139,7 +141,7 @@ func run() error {
 		backupsSvc.Close()
 	}()
 
-	handler := httpapi.New(authSvc, monitoringSvc, dashboardSvc, serversSvc, installersSvc, filesSvc, backupsSvc, hub, web.FS, log).Handler()
+	handler := httpapi.New(authSvc, monitoringSvc, dashboardSvc, serversSvc, installersSvc, filesSvc, backupsSvc, playersSvc, hub, web.FS, log).Handler()
 	return serve(ctx, log, cfg.Listen, handler, hub)
 }
 
