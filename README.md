@@ -27,6 +27,10 @@ make css            # regenerate web/assets/css/app.css after changing classes
 
 ## Documentation
 
+- [Architecture](docs/ARCHITECTURE.md)
+- [Security](docs/SECURITY.md)
+- [Development](docs/DEVELOPMENT.md)
 - [Installation](docs/INSTALL.md)
 - [Configuration](docs/CONFIGURATION.md)
 - [REST API](docs/API.md)
+- [WebSocket protocol](docs/WEBSOCKET.md)
