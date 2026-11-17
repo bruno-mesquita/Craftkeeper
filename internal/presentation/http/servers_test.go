@@ -46,7 +46,7 @@ func (s *stubRuntime) set(state string) func(context.Context, string, string) er
 	}
 }
 
-func (s *stubRuntime) EnsureImage(context.Context) error { return nil }
+func (s *stubRuntime) EnsureImage(context.Context, string) error { return nil }
 
 func (s *stubRuntime) Create(_ context.Context, spec domain.ContainerSpec) (string, error) {
 	s.mu.Lock()
@@ -146,7 +146,7 @@ func TestServerLifecycleContract(t *testing.T) {
 	id, _ := body["id"].(string)
 	if !domain.ValidServerID(id) || body["name"] != "Survival" || body["game"] != "minecraft" || body["loader"] != "vanilla" ||
 		body["version"] != "1.21.4" || body["status"] != "stopped" || body["memory_mb"] != float64(2048) ||
-		body["cpu_cores"] != 1.5 || body["port"] != float64(25601) || body["description"] != "" {
+		body["cpu_cores"] != 1.5 || body["port"] != float64(25601) || body["description"] != "" || body["loader_version"] != "" {
 		t.Fatalf("created: %v", body)
 	}
 	for _, k := range []string{"container_id", "created_at", "updated_at"} {

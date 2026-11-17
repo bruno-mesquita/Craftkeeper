@@ -88,7 +88,7 @@ func TestCreateContainerPolicy(t *testing.T) {
 	d.on("POST /containers/create", http.StatusCreated, `{"Id":"`+idRunning+`","Warnings":[]}`)
 
 	id, err := r.Create(context.Background(), domain.ContainerSpec{
-		ServerID: serverID, Game: "minecraft", Env: []string{"EULA=TRUE"}, DataDir: "/var/lib/mesquita-panel/servers/" + serverID,
+		ServerID: serverID, Game: "minecraft", Java: domain.Java17, Env: []string{"EULA=TRUE"}, DataDir: "/var/lib/mesquita-panel/servers/" + serverID,
 		Port: 25601, MemoryMB: 2048, CPUMillicores: 1500,
 	})
 	if err != nil || id != idRunning {
@@ -104,7 +104,7 @@ func TestCreateContainerPolicy(t *testing.T) {
 	}
 	hc := got["HostConfig"].(map[string]any)
 	checks := map[string][2]any{
-		"image":        {got["Image"], "itzg/minecraft-server@" + imageDigest},
+		"image":        {got["Image"], "itzg/minecraft-server@sha256:35f069ed801f4b14655acb52fdb7745dccfe69399867f57608ae4136a32c3c9e"},
 		"user":         {got["User"], "998:997"},
 		"open stdin":   {got["OpenStdin"], true},
 		"stop timeout": {got["StopTimeout"], float64(60)},
@@ -138,13 +138,15 @@ func TestCreateContainerPolicy(t *testing.T) {
 
 func TestCreateRejectsBadSpecs(t *testing.T) {
 	r, d := newRuntime(t)
-	good := domain.ContainerSpec{ServerID: serverID, DataDir: "/data/x", Port: 25601, MemoryMB: 512, CPUMillicores: 500}
+	good := domain.ContainerSpec{ServerID: serverID, Java: domain.Java25, DataDir: "/data/x", Port: 25601, MemoryMB: 512, CPUMillicores: 500}
 	for name, mutate := range map[string]func(*domain.ContainerSpec){
 		"server id":     func(s *domain.ContainerSpec) { s.ServerID = "../x" },
 		"relative dir":  func(s *domain.ContainerSpec) { s.DataDir = "data" },
 		"colon in dir":  func(s *domain.ContainerSpec) { s.DataDir = "/data:/etc" },
 		"invalid port":  func(s *domain.ContainerSpec) { s.Port = 0 },
 		"too high port": func(s *domain.ContainerSpec) { s.Port = 70000 },
+		"no java":       func(s *domain.ContainerSpec) { s.Java = "" },
+		"unknown java":  func(s *domain.ContainerSpec) { s.Java = "java11" },
 	} {
 		spec := good
 		mutate(&spec)
@@ -251,29 +253,41 @@ func TestErrorMapping(t *testing.T) {
 
 func TestEnsureImage(t *testing.T) {
 	ctx := context.Background()
-	inspect := "GET /images/" + image + "/json"
+	digest := gameImages[domain.Java21].digest
+	inspect := "GET /images/itzg/minecraft-server@" + digest + "/json"
 
 	r, d := newRuntime(t)
 	d.on(inspect, http.StatusOK, `{}`)
-	if err := r.EnsureImage(ctx); err != nil || d.sent("POST /images/create") {
+	if err := r.EnsureImage(ctx, domain.Java21); err != nil || d.sent("POST /images/create") {
 		t.Fatalf("present image: err=%v pulled=%v", err, d.sent("POST /images/create"))
 	}
 
 	r, d = newRuntime(t)
 	d.on(inspect, http.StatusNotFound, `{"message":"No such image"}`)
 	d.on("POST /images/create", http.StatusOK, `{"status":"Pulling"}`+"\n"+`{"status":"Downloaded newer image"}`+"\n")
-	if err := r.EnsureImage(ctx); err != nil {
+	if err := r.EnsureImage(ctx, domain.Java21); err != nil {
 		t.Fatal(err)
 	}
-	if q := d.queries["POST /images/create"]; q != "fromImage=itzg%2Fminecraft-server&tag="+strings.Replace(imageDigest, ":", "%3A", 1) {
+	if q := d.queries["POST /images/create"]; q != "fromImage=itzg%2Fminecraft-server&tag="+strings.Replace(digest, ":", "%3A", 1) {
 		t.Fatalf("pull query = %q", q)
 	}
 
 	r, d = newRuntime(t)
 	d.on(inspect, http.StatusNotFound, `{"message":"No such image"}`)
 	d.on("POST /images/create", http.StatusOK, `{"status":"Pulling"}`+"\n"+`{"error":"manifest unknown"}`+"\n")
-	if err := r.EnsureImage(ctx); !errors.Is(err, domain.ErrDockerFailed) {
+	if err := r.EnsureImage(ctx, domain.Java21); !errors.Is(err, domain.ErrDockerFailed) {
 		t.Fatalf("pull error in stream: %v", err)
+	}
+
+	// Only the pinned runtimes exist; anything else never reaches the daemon.
+	r, d = newRuntime(t)
+	if err := r.EnsureImage(ctx, "java11"); err == nil || len(d.requests) != 0 {
+		t.Fatalf("unknown java: err=%v requests=%v", err, d.requests)
+	}
+	for java, img := range gameImages {
+		if !strings.HasPrefix(img.digest, "sha256:") || len(img.digest) != 71 {
+			t.Errorf("%s: bad digest %q", java, img.digest)
+		}
 	}
 }
 

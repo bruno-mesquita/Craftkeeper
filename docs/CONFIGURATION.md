@@ -29,7 +29,9 @@ Port 8080 is already used on this host. Do not use `0.0.0.0`.
 | Backup disk reserve | 2 GiB of free space is always left; one archive written at a time; a running game must confirm `save-all flush` within 60 s |
 | Backup schedule | every 0 (off)–720 hours per server, keeping 0 (all)–100 scheduled backups; checked every minute |
 | Game port bind address | `0.0.0.0` (all interfaces). Internet exposure still depends on the router's port forwarding. |
-| Game server image | `itzg/minecraft-server:2026.11.0` (Java 25), pinned by digest |
+| Game server images | `itzg/minecraft-server` release 2026.11.0, one per Java version, each pinned by digest and pulled the first time a server needs it: `-java8` (Minecraft ≤ 1.16.5), `-java17` (1.17–1.20.4), `-java21` (1.20.5–1.21.x), Java 25 (26.x and `LATEST`) |
+| Server types | Vanilla, Fabric, Forge, NeoForge. Modded servers pin the exact Minecraft release and loader build at creation (the game image never upgrades the loader by itself) |
+| Version sources | HTTPS, read by the panel to list versions and cached for 1 hour: `piston-meta.mojang.com` (vanilla list only), `meta.fabricmc.net`, `maven.minecraftforge.net` + `files.minecraftforge.net`, `maven.neoforged.net`. 15 s timeout, 8 MiB per response. The game image downloads the server and loader from the same official hosts on first start, so the host needs outbound HTTPS to them |
 | Game container policy | runs as the panel's uid:gid (never root: `1000:1000` when the panel itself runs as root), which owns the server's data directory; no capabilities; `no-new-privileges`; no swap; 2048 PIDs; logs `json-file` 3 × 10 MB; restart `unless-stopped`; graceful stop timeout 60 s; default bridge network |
 | Server memory limit | 512–16384 MB (JVM heap = 75 % of it) |
 | Server CPU limit | 0.5 core up to the number of host CPUs |

@@ -21,11 +21,13 @@ import (
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/console"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/dashboard"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/files"
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/installers"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/monitoring"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
 	"github.com/bruno-mesquita/mesquita-panel/internal/config"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/docker"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/filesystem"
+	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/gameversions"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/hostnet"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/metrics"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/password"
@@ -38,6 +40,7 @@ import (
 
 const (
 	metricsCacheTTL = 2 * time.Second
+	versionsTTL     = time.Hour // official version lists change a few times a day at most
 	shutdownTimeout = 10 * time.Second
 )
 
@@ -95,8 +98,9 @@ func run() error {
 	monitoringSvc := monitoring.NewService(metrics.NewLinux("/proc", cfg.DataDir), docker.NewStatsCollector(dockerClient, log), metricsCacheTTL)
 	uid, gid := containerUser(log)
 	containers := docker.NewRuntime(dockerClient, uid, gid)
+	installersSvc := installers.NewService(gameversions.New(gameversions.Official), versionsTTL)
 	serversSvc := servers.NewService(sqlite.NewServers(store), containers,
-		filesystem.NewServerDirs(cfg.ServersDir(), cfg.BackupsDir(), uid, gid), auditLog, servers.Config{
+		filesystem.NewServerDirs(cfg.ServersDir(), cfg.BackupsDir(), uid, gid), installersSvc, auditLog, servers.Config{
 			FirstPort: cfg.GamePorts.First, LastPort: cfg.GamePorts.Last,
 			HostCPUs: runtime.NumCPU(), PortFree: hostnet.TCPPortFree,
 		})
@@ -135,7 +139,7 @@ func run() error {
 		backupsSvc.Close()
 	}()
 
-	handler := httpapi.New(authSvc, monitoringSvc, dashboardSvc, serversSvc, filesSvc, backupsSvc, hub, web.FS, log).Handler()
+	handler := httpapi.New(authSvc, monitoringSvc, dashboardSvc, serversSvc, installersSvc, filesSvc, backupsSvc, hub, web.FS, log).Handler()
 	return serve(ctx, log, cfg.Listen, handler, hub)
 }
 

@@ -13,13 +13,13 @@ type Servers struct{ s *Store }
 
 func NewServers(s *Store) *Servers { return &Servers{s: s} }
 
-const serverColumns = `id, name, description, game, loader, version, memory_mb, cpu_millicores, port,
-	container_id, created_at, updated_at`
+const serverColumns = `id, name, description, game, loader, version, loader_version, memory_mb, cpu_millicores,
+	port, container_id, created_at, updated_at`
 
 // Create stores x. A duplicate name or port is reported as a ValidationError on that field.
 func (r *Servers) Create(ctx context.Context, x domain.Server) error {
-	_, err := r.s.write.ExecContext(ctx, `INSERT INTO servers (`+serverColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		x.ID, x.Name, x.Description, x.Game, x.Loader, x.Version, x.MemoryMB, x.CPUMillicores, x.Port,
+	_, err := r.s.write.ExecContext(ctx, `INSERT INTO servers (`+serverColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		x.ID, x.Name, x.Description, x.Game, x.Loader, x.Version, x.LoaderVersion, x.MemoryMB, x.CPUMillicores, x.Port,
 		x.ContainerID, unix(x.CreatedAt), unix(x.UpdatedAt))
 	return uniqueViolation(err)
 }
@@ -91,7 +91,7 @@ func (r *Servers) UsedPorts(ctx context.Context) (map[int]bool, error) {
 func scanServer(row interface{ Scan(...any) error }) (domain.Server, error) {
 	var x domain.Server
 	var created, updated int64
-	err := row.Scan(&x.ID, &x.Name, &x.Description, &x.Game, &x.Loader, &x.Version, &x.MemoryMB, &x.CPUMillicores,
+	err := row.Scan(&x.ID, &x.Name, &x.Description, &x.Game, &x.Loader, &x.Version, &x.LoaderVersion, &x.MemoryMB, &x.CPUMillicores,
 		&x.Port, &x.ContainerID, &created, &updated)
 	if err != nil {
 		return domain.Server{}, err

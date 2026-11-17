@@ -10,6 +10,7 @@ import (
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/backups"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/dashboard"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/files"
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/installers"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/monitoring"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
 	wspres "github.com/bruno-mesquita/mesquita-panel/internal/presentation/websocket"
@@ -21,6 +22,7 @@ type API struct {
 	monitoring *monitoring.Service
 	dashboard  *dashboard.Service
 	servers    *servers.Service
+	installers *installers.Service
 	files      *files.Service
 	backups    *backups.Service
 	ws         *wspres.Hub
@@ -28,9 +30,10 @@ type API struct {
 	log        *slog.Logger
 }
 
-func New(a *auth.Service, m *monitoring.Service, d *dashboard.Service, s *servers.Service, f *files.Service,
-	b *backups.Service, ws *wspres.Hub, static fs.FS, log *slog.Logger) *API {
-	return &API{auth: a, monitoring: m, dashboard: d, servers: s, files: f, backups: b, ws: ws, static: static, log: log}
+func New(a *auth.Service, m *monitoring.Service, d *dashboard.Service, s *servers.Service, i *installers.Service,
+	f *files.Service, b *backups.Service, ws *wspres.Hub, static fs.FS, log *slog.Logger) *API {
+	return &API{auth: a, monitoring: m, dashboard: d, servers: s, installers: i, files: f, backups: b, ws: ws,
+		static: static, log: log}
 }
 
 // Handler returns the complete HTTP handler with middleware applied.
@@ -49,6 +52,9 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/system/stats", a.requireAuth(a.systemStats))
 	mux.HandleFunc("GET /api/v1/system/containers", a.requireAuth(a.containerStats))
 	mux.HandleFunc("GET /api/v1/dashboard", a.requireAuth(a.dashboardOverview))
+
+	mux.HandleFunc("GET /api/v1/installers/{loader}/versions", a.requireAuth(a.minecraftVersions))
+	mux.HandleFunc("GET /api/v1/installers/{loader}/versions/{minecraft}", a.requireAuth(a.loaderVersions))
 
 	mux.HandleFunc("GET /api/v1/servers", a.requireAuth(a.listServers))
 	mux.HandleFunc("POST /api/v1/servers", a.requireAuth(a.createServer))

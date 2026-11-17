@@ -18,25 +18,26 @@ const (
 )
 
 type serverDTO struct {
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`
-	Description string  `json:"description"`
-	Game        string  `json:"game"`
-	Loader      string  `json:"loader"`
-	Version     string  `json:"version"`
-	Status      string  `json:"status"`
-	MemoryMB    int     `json:"memory_mb"`
-	CPUCores    float64 `json:"cpu_cores"`
-	Port        int     `json:"port"`
-	ContainerID string  `json:"container_id"`
-	CreatedAt   string  `json:"created_at"`
-	UpdatedAt   string  `json:"updated_at"`
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	Description   string  `json:"description"`
+	Game          string  `json:"game"`
+	Loader        string  `json:"loader"`
+	Version       string  `json:"version"`
+	LoaderVersion string  `json:"loader_version"`
+	Status        string  `json:"status"`
+	MemoryMB      int     `json:"memory_mb"`
+	CPUCores      float64 `json:"cpu_cores"`
+	Port          int     `json:"port"`
+	ContainerID   string  `json:"container_id"`
+	CreatedAt     string  `json:"created_at"`
+	UpdatedAt     string  `json:"updated_at"`
 }
 
 func toServerDTO(v servers.View) serverDTO {
 	return serverDTO{
 		ID: v.ID, Name: v.Name, Description: v.Description, Game: v.Game, Loader: v.Loader, Version: v.Version,
-		Status: string(v.Status), MemoryMB: v.MemoryMB, CPUCores: float64(v.CPUMillicores) / 1000, Port: v.Port,
+		LoaderVersion: v.LoaderVersion, Status: string(v.Status), MemoryMB: v.MemoryMB, CPUCores: float64(v.CPUMillicores) / 1000, Port: v.Port,
 		ContainerID: v.ContainerID, CreatedAt: rfc3339(v.CreatedAt), UpdatedAt: rfc3339(v.UpdatedAt),
 	}
 }
@@ -89,23 +90,29 @@ func (a *API) listServers(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) createServer(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name        string  `json:"name"`
-		Description string  `json:"description"`
-		Version     string  `json:"version"`
-		MemoryMB    int     `json:"memory_mb"`
-		CPUCores    float64 `json:"cpu_cores"`
-		Port        int     `json:"port"`
-		AcceptEULA  bool    `json:"accept_eula"`
+		Name          string  `json:"name"`
+		Description   string  `json:"description"`
+		Loader        string  `json:"loader"`
+		Version       string  `json:"version"`
+		LoaderVersion string  `json:"loader_version"`
+		MemoryMB      int     `json:"memory_mb"`
+		CPUCores      float64 `json:"cpu_cores"`
+		Port          int     `json:"port"`
+		AcceptEULA    bool    `json:"accept_eula"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if req.Version == "" {
-		req.Version = "LATEST"
+	if req.Loader == "" {
+		req.Loader = domain.LoaderVanilla
+	}
+	if req.Version == "" && req.Loader == domain.LoaderVanilla {
+		req.Version = domain.MinecraftLatest
 	}
 	extendDeadlines(w, createDeadline)
 	v, err := a.servers.Create(r.Context(), servers.CreateInput{
-		Name: req.Name, Description: req.Description, Version: req.Version, MemoryMB: req.MemoryMB,
+		Name: req.Name, Description: req.Description, Loader: req.Loader, Version: req.Version,
+		LoaderVersion: req.LoaderVersion, MemoryMB: req.MemoryMB,
 		CPUMillicores: millicores(req.CPUCores), Port: req.Port, AcceptEULA: req.AcceptEULA,
 	}, actorOf(r))
 	if err != nil {

@@ -35,7 +35,9 @@ type Actor struct {
 type CreateInput struct {
 	Name          string
 	Description   string
-	Version       string
+	Loader        string
+	Version       string // Minecraft version
+	LoaderVersion string // "" picks the recommended build
 	MemoryMB      int
 	CPUMillicores int
 	Port          int // 0 picks the first free port of the range
@@ -51,26 +53,34 @@ type UpdateInput struct {
 }
 
 type Service struct {
-	repo    ServerRepository
-	runtime ContainerRuntime
-	dirs    DataDirs
-	audit   AuditRecorder
-	cfg     Config
-	now     func() time.Time
+	repo       ServerRepository
+	runtime    ContainerRuntime
+	dirs       DataDirs
+	installers Installers
+	audit      AuditRecorder
+	cfg        Config
+	now        func() time.Time
 
 	// createLock serializes creations, so two requests cannot pick the same port or pull the
 	// image twice.
 	createLock sync.Mutex
 }
 
-func NewService(repo ServerRepository, runtime ContainerRuntime, dirs DataDirs, audit AuditRecorder, cfg Config) *Service {
-	return &Service{repo: repo, runtime: runtime, dirs: dirs, audit: audit, cfg: cfg, now: time.Now}
+func NewService(repo ServerRepository, runtime ContainerRuntime, dirs DataDirs, installers Installers,
+	audit AuditRecorder, cfg Config) *Service {
+	return &Service{repo: repo, runtime: runtime, dirs: dirs, installers: installers, audit: audit, cfg: cfg, now: time.Now}
 }
 
-// Create validates the input, assigns a port, pulls the image if needed and creates the
-// server's directory and (stopped) container. Any failure undoes the steps already done.
+// Create validates the input, pins the loader build, assigns a port, pulls the image for the
+// game's Java version if needed and creates the server's directory and (stopped) container.
+// Any failure undoes the steps already done.
 func (s *Service) Create(ctx context.Context, in CreateInput, actor Actor) (View, error) {
 	if err := s.validateCreate(in); err != nil {
+		return View{}, err
+	}
+	// Outside the lock: modded servers may wait on the version sources.
+	loaderVersion, err := s.installers.Resolve(ctx, in.Loader, in.Version, in.LoaderVersion)
+	if err != nil {
 		return View{}, err
 	}
 
@@ -84,7 +94,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput, actor Actor) (View
 	now := s.now().UTC().Truncate(time.Second) // stored with second precision
 	x := domain.Server{
 		ID: rand.Text(), Name: in.Name, Description: in.Description,
-		Game: domain.GameMinecraft, Loader: domain.LoaderVanilla, Version: in.Version,
+		Game: domain.GameMinecraft, Loader: in.Loader, Version: in.Version, LoaderVersion: loaderVersion,
 		MemoryMB: in.MemoryMB, CPUMillicores: in.CPUMillicores, Port: port,
 		CreatedAt: now, UpdatedAt: now,
 	}
@@ -104,7 +114,8 @@ func (s *Service) Create(ctx context.Context, in CreateInput, actor Actor) (View
 	}
 	undo = append(undo, func() { _ = s.repo.Delete(cleanupCtx, x.ID) })
 
-	if err := s.runtime.EnsureImage(ctx); err != nil {
+	java := domain.JavaFor(x.Version)
+	if err := s.runtime.EnsureImage(ctx, java); err != nil {
 		return fail(err)
 	}
 	dir, err := s.dirs.Create(x.ID)
@@ -114,7 +125,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput, actor Actor) (View
 	undo = append(undo, func() { _ = s.dirs.Remove(x.ID) })
 
 	cid, err := s.runtime.Create(ctx, domain.ContainerSpec{
-		ServerID: x.ID, Game: x.Game, Env: minecraftEnv(x), DataDir: dir,
+		ServerID: x.ID, Game: x.Game, Java: java, Env: minecraftEnv(x), DataDir: dir,
 		Port: x.Port, MemoryMB: x.MemoryMB, CPUMillicores: x.CPUMillicores,
 	})
 	if err != nil {
@@ -134,7 +145,6 @@ func (s *Service) validateCreate(in CreateInput) error {
 	for _, err := range []error{
 		domain.ValidateServerName(in.Name),
 		domain.ValidateServerDescription(in.Description),
-		domain.ValidateMinecraftVersion(in.Version),
 		domain.ValidateServerMemory(in.MemoryMB),
 		domain.ValidateServerCPU(in.CPUMillicores, s.cfg.HostCPUs),
 	} {

@@ -49,7 +49,7 @@ Formato: decisão — motivo — consequência.
 - **D16 · Engine API fixa em `/v1.44`** — Docker Engine 25+, já tem stats `one-shot` (≥ 1.41); sem negociação via `/version`. Host: Engine 29.10.0, API 1.57 (mínima 1.40), verificado em 2026-11-17. — Revisar só se um daemon futuro subir a versão mínima acima de 1.44.
 - **D17 · Métricas só de containers `mesquita.managed=true`** (escolha do usuário, 2026-11-17) — spec §11. — Filtro no daemon **e** revalidação da label + formato do ID no cliente. Ainda não cruza `mesquita.server_id` com o banco: não existe tabela `servers` até a Fase 3, que adiciona esse cruzamento antes de qualquer ação.
 - **D18 · Sem histórico de métricas** (escolha do usuário) — só tempo real por polling REST (3 s); a Fase 4 levou só status e console para o WebSocket (escolha do usuário), métricas seguem por polling; sem goroutine de fundo. CPU/rede de container por delta entre coletas (primeira amostra = 0), mapa de amostras podado a cada coleta.
-- **D19 · Imagem de jogo `itzg/minecraft-server:2026.11.0` (Java 25) pinada por digest** (escolha do usuário, 2026-11-17) — baixa o jar sozinha via `TYPE`/`VERSION`; a Fase 7 vira ampliar a allowlist de loaders. Digest do índice multi-arch `sha256:8d5080d8dcd0a2629c2e4f248678373a337a40537ad6ef2857c7dbcda6e3eadd` (Docker Hub, verificado 2026-11-17). Java 25 e não 21: o Minecraft atual exige 25. Versões antigas (< 1.17) podem precisar de outra tag de Java — tratar na Fase 7. Atualizar = trocar `imageTag`/`imageDigest` em `docker/runtime.go`.
+- **D19 · Imagem de jogo `itzg/minecraft-server:2026.11.0` (Java 25) pinada por digest** (escolha do usuário, 2026-11-17) — baixa o jar sozinha via `TYPE`/`VERSION`; a Fase 7 vira ampliar a allowlist de loaders. Digest do índice multi-arch `sha256:8d5080d8dcd0a2629c2e4f248678373a337a40537ad6ef2857c7dbcda6e3eadd` (Docker Hub, verificado 2026-11-17). Java 25 e não 21: o Minecraft atual exige 25. Fase 7 trocou por uma imagem por Java (D45). Atualizar = trocar `gameImages` em `docker/runtime.go`.
 - **D20 · Portas de jogo `25601–25700` (`MESQUITA_GAME_PORTS`), bind em `0.0.0.0`** (escolha do usuário) — Crafty usa 25500–25600. Porta = pedida ou primeira livre (não usada no banco + `net.Listen` passa); UNIQUE no banco; `port_in_use` no start cobre a corrida.
 - **D21 · Política fixa do container** — roda como uid:gid do painel (arquivos do painel → Fases 5/6); **nunca root**: com o painel como root (`sudo make run`) usa `1000:1000` e a pasta do servidor é `chown`ada para ele (sem capabilities, o entrypoint root do itzg falha no `chown`/troca de usuário e entra em loop de restart — visto em 2026-11-17), `CapDrop ALL`, `no-new-privileges`, swap = 0, PIDs 2048, logs 3 × 10 MB, `unless-stopped`, stop 60 s, `OpenStdin` (console da Fase 4 sem recriar), bridge padrão (sem `docker network`). Heap = `MaxRAMPercentage=75` com `MEMORY=""`: mudar limite + restart já vale. `ENABLE_RCON=false` (console usa stdin, D25).
 - **D22 · Status derivado, nunca persistido** — `running/starting/stopped/restarting/missing/unknown`; um container só conta se ID **e** label `server_id` batem com o banco. Toda operação mutante do `docker.Runtime` faz inspect e confere `mesquita.managed` + `server_id` antes de agir (D17 cumprido).
@@ -75,6 +75,9 @@ Formato: decisão — motivo — consequência.
 - **D40 · Restore síncrono em duas fases** — exige `stopped`/`missing`; extrai em `servers/.restore-<id>-<rand>` (uid:gid do container), reconfere o status e troca: atual → `servers/.deleted/<id>-<unix>-pre-restore` (escolha do usuário), staging → `<id>`. Ligou no meio → descarta, `409`. Cancelar a requisição descarta (nada muda). Modos viram 0640/0750.
 - **D41 · Um create/restore por servidor** (`409 backup_in_progress`); delete recusa backup `creating` ou restore em andamento. `ServerDirs.Remove/Archive` cuidam também de `backups/<id>` (mesma política D23). Servidor apagado durante um job: linha some por cascade, job apaga o arquivo órfão.
 - **D42 · Agendamento por intervalo + retenção** (escolha do usuário) — `interval_hours` 0–720, `retain` 0–100 (0 = todos), só backups agendados (manuais nunca são apagados sozinhos; agendados `failed` são limpos após um sucesso). `backups.Service.Run`: ticker 1 min; ocupado → tenta no próximo tick; outra recusa → grava backup agendado `failed` (aparece na lista) e espera um intervalo; mantém a cadência (`next += interval`), após downtime roda uma vez e segue de agora. Mudar só `retain` mantém o próximo horário.
+- **D43 · Catálogo de versões pelas fontes oficiais, HTTPS fixo** (escolha do usuário, 2026-11-17) — Mojang `piston-meta`, Fabric `meta.fabricmc.net`, Forge `maven.minecraftforge.net` + `promotions_slim.json`, NeoForge `maven.neoforged.net`. URLs constantes em `gameversions.Official` (a spec fala em "configurable": desvio consciente, são fixas). "Verified" = TLS com CAs do host + versões exatas pinadas + imagem por digest (o itzg baixa das mesmas fontes). Timeout 15 s, ≤ 8 MiB, User-Agent `mesquita-panel`; cache 1 h por fonte (`application/ttlcache`, extraído do monitoring); fonte fora sem cache → `503 installer_unavailable`. Tudo o que sai das fontes passa pelas regex do domain antes de virar env do container.
+- **D44 · Versões pinadas para modded** — Fabric/Forge/NeoForge exigem MC concreto (sem `LATEST`) e `loader_version` existente no catálogo; omitido = recomendado, gravado (migration `0004`). Sem isso o itzg re-resolve a versão a cada start e atualiza o loader sob os mods. Vanilla mantém `LATEST` e não depende da rede. Recomendado: Fabric = stable mais novo; Forge = promo `recommended` → `latest` → mais novo; NeoForge = mais novo sem `-beta`. NeoForge→MC: `21.1.x`→`1.21.1`, `21.0.x`→`1.21`; ≥ 26: `26.1.2.127`→`26.1.2`, `26.3.0.110`→`26.3`. Forge: entradas `<mc>-<build>` com sufixo extra (1.7.10, 1.10, …) são ignoradas. Trocar loader/versão de servidor existente e modpacks: fora do escopo.
+- **D45 · Imagem Java por versão do MC** (escolha do usuário: automático, sem override) — `≤1.16.5`→java8, `1.17–1.20.4`→java17, `1.20.5–1.21.x`→java21, `26.x`/`LATEST`→java25. Tags `2026.11.0-java8/17/21` + `2026.11.0` (= `-java25`), digests lidos do Docker Hub em 2026-11-17, em `docker.gameImages` (allowlist; java desconhecido nunca chega ao daemon). Pull só quando usada. Derivada da versão gravada, não persistida. Resolve a pendência de versões antigas da D19.
 - **D10 · systemd com usuário dedicado `mesquita-panel`** — princípio do menor privilégio. — Precisa estar no grupo `docker` (root-equivalente) a partir da Fase 3; criação do usuário e grupo exige autorização no deploy.
 
 ---
@@ -102,7 +105,7 @@ Formato: decisão — motivo — consequência.
 | 4 | WebSocket + console | ✅ implementada, testada e verificada com servidor real (2026-11-17) | ver Fase 4 abaixo |
 | 5 | File manager | ✅ implementada, testada e verificada com servidor real (2026-11-17) | ver Fase 5 abaixo |
 | 6 | Backups | ✅ implementada, testada e verificada com servidor real (2026-11-17) | ver Fase 6 abaixo |
-| 7 | Game installers (Vanilla, Paper, Purpur, Fabric, Forge, NeoForge) | planejada | |
+| 7 | Game installers (Vanilla, Fabric, Forge, NeoForge; Paper/Purpur fora por escolha do usuário) | ✅ implementada, testada e verificada com servidor real (2026-11-17) | ver Fase 7 abaixo |
 
 Legenda de detalhe por feature (preencher ao implementar): **implementado** / **testado** / **planejado**.
 
@@ -209,6 +212,29 @@ Plano: `~/.claude/plans/fa-a-o-planejamento-da-crystalline-taco.md`. Decisões D
 - **Verificado de verdade (usuário, 2026-11-17):** roteiro real completo funcionou (backup online com o console
   mostrando save-off/Saved the game/save-on, download, restore, Start durante restore → 409,
   agendamento, apagar servidor com/sem arquivos). Ainda não medido: RSS/CPU durante backup.
+
+## Fase 7 — estado (2026-11-17)
+
+Plano: `~/.claude/plans/a-pr-xima-a-reactive-minsky.md`. Decisões D43–D45.
+- **Implementado:** `domain/installer.go` (loaders, `ValidLoaderVersion`, `CompareVersions`,
+  `JavaFor`, `LoaderVersions`) + `Server.LoaderVersion`, `ContainerSpec.Java`,
+  `ErrInstallerUnavailable`; migration `0004_loader_version`; `infrastructure/gameversions`
+  (4 fontes, JSON/XML); `application/ttlcache` (movido do monitoring); `application/installers`
+  (listas + `Resolve`); `servers.Create` com loader/Java e env `FABRIC_LOADER_VERSION` /
+  `FORGE_VERSION` / `NEOFORGE_VERSION`; `docker.Runtime` com imagem por Java; rotas
+  `GET /api/v1/installers/{loader}/versions[/{minecraft}]`; `POST /servers` com `loader` e
+  `loader_version`; UI: selects tipo → versão MC → versão do loader (vanilla cai para texto se a
+  fonte falhar), rótulo "Forge 1.20.1 · 47.3.0" na lista e na página; docs API/CONFIGURATION/README.
+- **Testado:** `sudo make check` passou (2026-11-17). Testes: domain, `gameversions` (httptest com fixtures reais
+  reduzidas, falhas), `installers`, `servers` (modded, Java, env, 422, fonte fora), `docker`
+  (imagem por Java, java desconhecido), `sqlite` (round-trip + migration sobre banco antigo),
+  HTTP (contrato installers + create modded).
+- **Verificado de verdade (usuário, 2026-11-17):** roteiro real feito. Log do Fabric 1.21.11
+  conferido: imagem `2026.11.0-java21`, 1º start instala loader 0.20.1; restarts seguintes
+  mostram "Fabric launcher for minecraft 1.21.11 loader 0.20.1 is already available" (sem
+  reinstalar nem trocar versão); JEI sem fabric-api → falha de resolução de mods → loop de
+  restart (`unless-stopped`, comportamento já existente); com fabric-api 0.141.6 sobe com
+  43 mods e o jogador conecta.
 
 ## Roadmap — Fase 1 (Foundation, referência)
 

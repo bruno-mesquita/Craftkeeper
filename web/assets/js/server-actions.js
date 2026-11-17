@@ -1,4 +1,5 @@
-// Server status labels and lifecycle actions shared by the server list and detail pages.
+// Server status labels, game version labels and lifecycle actions shared by the server list
+// and detail pages.
 import { api } from './api.js';
 import { confirmDialog } from './dialog.js';
 
@@ -10,6 +11,14 @@ export const STATUS = {
   missing: { label: 'Container missing', tone: 'text-danger border-danger/40' },
   unknown: { label: 'Unknown', tone: 'text-warning border-warning/40' },
 };
+
+export const LOADERS = { vanilla: 'Vanilla', fabric: 'Fabric', forge: 'Forge', neoforge: 'NeoForge' };
+
+// gameVersion describes what a server runs, e.g. "Forge 1.20.1 · 47.3.0".
+export function gameVersion(s) {
+  const version = s.version === 'LATEST' ? 'latest' : s.version;
+  return `${LOADERS[s.loader] ?? s.loader} ${version}${s.loader_version ? ` · ${s.loader_version}` : ''}`;
+}
 
 export const ACTIVE = new Set(['running', 'starting', 'restarting']);
 

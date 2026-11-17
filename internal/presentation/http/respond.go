@@ -94,6 +94,9 @@ func writeDomainError(w http.ResponseWriter, log *slog.Logger, err error) {
 		writeError(w, http.StatusConflict, "backup_not_ready", "the backup is not ready")
 	case errors.Is(err, domain.ErrServerBusy):
 		writeError(w, http.StatusConflict, "server_busy", "the server is starting or restarting; try again shortly")
+	case errors.Is(err, domain.ErrInstallerUnavailable):
+		log.Warn("version source unavailable", "err", err)
+		writeError(w, http.StatusServiceUnavailable, "installer_unavailable", "the version list could not be downloaded; try again later")
 	case errors.Is(err, domain.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "resource not found")
 	default:

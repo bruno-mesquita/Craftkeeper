@@ -19,6 +19,8 @@ var (
 	ErrPortInUse          = errors.New("port already in use")
 	ErrNotManaged         = errors.New("container is not managed by this server")
 
+	ErrInstallerUnavailable = errors.New("version source unavailable")
+
 	ErrFileExists          = errors.New("file already exists")
 	ErrNotDirectory        = errors.New("not a directory")
 	ErrIsDirectory         = errors.New("is a directory")

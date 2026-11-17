@@ -6,7 +6,7 @@ import { h, toast } from '../dom.js';
 import { bytes, percent } from '../format.js';
 import { mountBackupManager } from '../backup-manager.js';
 import { mountFileManager } from '../file-manager.js';
-import { ACTIONS, ACTIVE, STATUS, confirmAction, lifecycleActions, runAction } from '../server-actions.js';
+import { ACTIONS, ACTIVE, STATUS, confirmAction, gameVersion, lifecycleActions, runAction } from '../server-actions.js';
 import * as ws from '../ws.js';
 
 const MAX_LINES = 2000; // older lines are dropped from the page (the server keeps the log)
@@ -129,7 +129,7 @@ export function mount(root, { param: id }) {
     const st = STATUS[server.status] ?? STATUS.unknown;
     status.textContent = busy ?? st.label;
     status.className = `badge whitespace-nowrap ${busy ? 'text-primary border-primary/40' : st.tone}`;
-    meta.textContent = `Minecraft ${server.version} · port ${server.port} · ${bytes(server.memory_mb * 1048576)} · ${server.cpu_cores} CPU`;
+    meta.textContent = `Minecraft ${gameVersion(server)} · port ${server.port} · ${bytes(server.memory_mb * 1048576)} · ${server.cpu_cores} CPU`;
     actions.replaceChildren(...lifecycleActions(server.status).map((a) =>
       h('button', { class: `btn ${a === 'start' ? 'btn-primary' : 'btn-ghost'}`, type: 'button', disabled: Boolean(busy), onclick: () => act(a) },
         ACTIONS[a].label)));

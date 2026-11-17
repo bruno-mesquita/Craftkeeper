@@ -10,7 +10,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/installers"
 	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/filesystem"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/sqlite"
@@ -25,6 +27,7 @@ type fakeRuntime struct {
 	limits     map[string][2]int
 	fail       map[string]error // operation name -> error
 	calls      []string
+	pulled     []string // Java runtimes passed to EnsureImage
 	n          int
 }
 
@@ -50,9 +53,10 @@ func (f *fakeRuntime) owned(id, serverID string) (*domain.ContainerState, error)
 	return c, nil
 }
 
-func (f *fakeRuntime) EnsureImage(context.Context) error {
+func (f *fakeRuntime) EnsureImage(_ context.Context, java string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.pulled = append(f.pulled, java)
 	return f.begin("pull")
 }
 
@@ -150,7 +154,34 @@ func (f *fakeRuntime) UpdateLimits(_ context.Context, id, serverID string, mem, 
 	return nil
 }
 
+// fakeSource is the version catalog for tests: one Forge, Fabric and NeoForge release.
+type fakeSource struct{ down bool }
+
+func (f *fakeSource) catalog(mc string, builds ...string) (map[string]domain.LoaderVersions, error) {
+	if f.down {
+		return nil, domain.ErrInstallerUnavailable
+	}
+	return map[string]domain.LoaderVersions{mc: {Versions: builds, Recommended: builds[len(builds)-1]}}, nil
+}
+
+func (f *fakeSource) Minecraft(context.Context) ([]string, error) {
+	return nil, errors.New("unused")
+}
+
+func (f *fakeSource) Fabric(context.Context) (map[string]domain.LoaderVersions, error) {
+	return f.catalog("1.21.1", "0.20.1")
+}
+
+func (f *fakeSource) Forge(context.Context) (map[string]domain.LoaderVersions, error) {
+	return f.catalog("1.20.1", "47.4.5", "47.3.0")
+}
+
+func (f *fakeSource) NeoForge(context.Context) (map[string]domain.LoaderVersions, error) {
+	return f.catalog("1.21.1", "21.1.267")
+}
+
 type env struct {
+	src     *fakeSource
 	svc     *Service
 	rt      *fakeRuntime
 	repo    *sqlite.Servers
@@ -168,16 +199,17 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { store.Close() })
-	e := &env{rt: newFakeRuntime(), repo: sqlite.NewServers(store), dir: filepath.Join(tmp, "servers"),
+	e := &env{src: &fakeSource{}, rt: newFakeRuntime(), repo: sqlite.NewServers(store), dir: filepath.Join(tmp, "servers"),
 		busy: map[int]bool{}, actor: Actor{UserID: "U", IP: "127.0.0.1"},
 		auditDB: sqlite.NewAuditLog(store, slog.New(slog.NewTextHandler(io.Discard, nil)))}
-	e.svc = NewService(e.repo, e.rt, filesystem.NewServerDirs(e.dir, filepath.Join(tmp, "backups"), os.Getuid(), os.Getgid()), e.auditDB,
+	e.svc = NewService(e.repo, e.rt, filesystem.NewServerDirs(e.dir, filepath.Join(tmp, "backups"), os.Getuid(), os.Getgid()),
+		installers.NewService(e.src, time.Hour), e.auditDB,
 		Config{FirstPort: 25601, LastPort: 25603, HostCPUs: 4, PortFree: func(p int) bool { return !e.busy[p] }})
 	return e
 }
 
 func validInput(name string) CreateInput {
-	return CreateInput{Name: name, Version: "LATEST", MemoryMB: 2048, CPUMillicores: 2000, AcceptEULA: true}
+	return CreateInput{Name: name, Loader: domain.LoaderVanilla, Version: "LATEST", MemoryMB: 2048, CPUMillicores: 2000, AcceptEULA: true}
 }
 
 func fieldOf(err error) string {
@@ -231,12 +263,14 @@ func TestCreateAssignsPortsAndBuildsContainer(t *testing.T) {
 func TestCreateValidation(t *testing.T) {
 	e := newEnv(t)
 	cases := map[string]func(*CreateInput){
-		"name":        func(in *CreateInput) { in.Name = "" },
-		"version":     func(in *CreateInput) { in.Version = "1.21; rm -rf /" },
-		"memory_mb":   func(in *CreateInput) { in.MemoryMB = 100 },
-		"cpu_cores":   func(in *CreateInput) { in.CPUMillicores = 8000 },
-		"accept_eula": func(in *CreateInput) { in.AcceptEULA = false },
-		"port":        func(in *CreateInput) { in.Port = 25565 },
+		"name":           func(in *CreateInput) { in.Name = "" },
+		"loader":         func(in *CreateInput) { in.Loader = "paper" },
+		"version":        func(in *CreateInput) { in.Version = "1.21; rm -rf /" },
+		"loader_version": func(in *CreateInput) { in.LoaderVersion = "47.3.0" }, // vanilla has none
+		"memory_mb":      func(in *CreateInput) { in.MemoryMB = 100 },
+		"cpu_cores":      func(in *CreateInput) { in.CPUMillicores = 8000 },
+		"accept_eula":    func(in *CreateInput) { in.AcceptEULA = false },
+		"port":           func(in *CreateInput) { in.Port = 25565 },
 	}
 	for field, mutate := range cases {
 		in := validInput("X")
@@ -247,6 +281,76 @@ func TestCreateValidation(t *testing.T) {
 	}
 	if len(e.rt.containers) != 0 {
 		t.Fatal("no container may be created on invalid input")
+	}
+}
+
+func TestCreateModded(t *testing.T) {
+	e := newEnv(t)
+	e.svc.cfg.LastPort = 25610
+	ctx := context.Background()
+	cases := []struct {
+		name, loader, mc, lv string
+		wantLV, wantEnv      string
+		wantJava             string
+	}{
+		{"Forge", domain.LoaderForge, "1.20.1", "", "47.3.0", "FORGE_VERSION=47.3.0", domain.Java17},
+		{"Forge pinned", domain.LoaderForge, "1.20.1", "47.4.5", "47.4.5", "FORGE_VERSION=47.4.5", domain.Java17},
+		{"Fabric", domain.LoaderFabric, "1.21.1", "", "0.20.1", "FABRIC_LOADER_VERSION=0.20.1", domain.Java21},
+	}
+	e.rt.pulled = nil
+	for _, c := range cases {
+		in := validInput(c.name)
+		in.Loader, in.Version, in.LoaderVersion = c.loader, c.mc, c.lv
+		v, err := e.svc.Create(ctx, in, e.actor)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		stored, _ := e.repo.ByID(ctx, v.ID)
+		if v.Loader != c.loader || v.LoaderVersion != c.wantLV || stored.LoaderVersion != c.wantLV || stored.Version != c.mc {
+			t.Fatalf("%s: view %+v, stored %+v", c.name, v.Server, stored)
+		}
+		spec := e.rt.specs[v.ContainerID]
+		env := strings.Join(spec.Env, " ")
+		if spec.Java != c.wantJava || !strings.Contains(env, c.wantEnv) ||
+			!strings.Contains(env, "TYPE="+strings.ToUpper(c.loader)) || !strings.Contains(env, "VERSION="+c.mc) {
+			t.Fatalf("%s: java %s env %v", c.name, spec.Java, spec.Env)
+		}
+		if got := e.rt.pulled[len(e.rt.pulled)-1]; got != c.wantJava {
+			t.Fatalf("%s: pulled %s", c.name, got)
+		}
+	}
+
+	// Vanilla gets no loader variable and the newest Java for LATEST.
+	v, err := e.svc.Create(ctx, validInput("Vanilla"), e.actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec := e.rt.specs[v.ContainerID]; spec.Java != domain.Java25 || strings.Contains(strings.Join(spec.Env, " "), "LOADER") ||
+		strings.Contains(strings.Join(spec.Env, " "), "FORGE") || v.LoaderVersion != "" {
+		t.Fatalf("vanilla spec = %+v", spec)
+	}
+
+	bad := map[string]CreateInput{}
+	in := validInput("Bad1")
+	in.Loader = domain.LoaderForge // LATEST is vanilla-only
+	bad["version"] = in
+	in = validInput("Bad2")
+	in.Loader, in.Version, in.LoaderVersion = domain.LoaderForge, "1.20.1", "47.9.9"
+	bad["loader_version"] = in
+	for field, in := range bad {
+		if _, err := e.svc.Create(ctx, in, e.actor); fieldOf(err) != field {
+			t.Errorf("%s: err = %v", field, err)
+		}
+	}
+
+	e.src.down = true
+	in = validInput("Down")
+	in.Loader, in.Version = domain.LoaderNeoForge, "1.21.1"
+	if _, err := e.svc.Create(ctx, in, e.actor); !errors.Is(err, domain.ErrInstallerUnavailable) {
+		t.Fatalf("source down: err = %v", err)
+	}
+	if list, _ := e.repo.List(ctx); len(list) != 4 {
+		t.Fatalf("servers = %d, want 4 (nothing created on failure)", len(list))
 	}
 }
 

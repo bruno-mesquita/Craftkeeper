@@ -20,7 +20,7 @@ type ServerRepository interface {
 // ContainerRuntime runs server containers. Every method that touches an existing container
 // takes the server ID and refuses containers that do not carry it (domain.ErrNotManaged).
 type ContainerRuntime interface {
-	EnsureImage(ctx context.Context) error
+	EnsureImage(ctx context.Context, java string) error
 	Create(ctx context.Context, spec domain.ContainerSpec) (string, error)
 	Inspect(ctx context.Context, id, serverID string) (domain.ContainerState, error)
 	States(ctx context.Context) ([]domain.ContainerState, error)
@@ -30,6 +30,13 @@ type ContainerRuntime interface {
 	Kill(ctx context.Context, id, serverID string) error
 	Remove(ctx context.Context, id, serverID string) error
 	UpdateLimits(ctx context.Context, id, serverID string, memoryMB, cpuMillicores int) error
+}
+
+// Installers pins the versions a new server installs.
+type Installers interface {
+	// Resolve validates loader and versions and returns the exact loader build to install
+	// ("" for vanilla).
+	Resolve(ctx context.Context, loader, mcVersion, loaderVersion string) (string, error)
 }
 
 // DataDirs owns the per-server data directories.

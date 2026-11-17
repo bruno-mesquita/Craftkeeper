@@ -8,11 +8,8 @@ import (
 	"unicode/utf8"
 )
 
-// Game and loader identifiers. They are persisted and returned by the API.
-const (
-	GameMinecraft = "minecraft"
-	LoaderVanilla = "vanilla"
-)
+// Game identifier. It is persisted and returned by the API.
+const GameMinecraft = "minecraft"
 
 // Server is a game server managed by the panel. Its status is not stored: it is derived
 // from the container state every time it is read.
@@ -21,8 +18,9 @@ type Server struct {
 	Name          string
 	Description   string
 	Game          string
-	Loader        string
-	Version       string // "LATEST" or a release such as "1.21.4"
+	Loader        string // see Loader* in installer.go
+	Version       string // "LATEST" (vanilla only) or a release such as "1.21.4"
+	LoaderVersion string // exact loader version; empty for vanilla
 	MemoryMB      int
 	CPUMillicores int // 1000 = one core
 	Port          int // host TCP port of the game
@@ -123,14 +121,6 @@ func ValidateMinecraftVersion(v string) error {
 	return nil
 }
 
-// ValidateLoader accepts the server types the panel can install. Phase 7 extends this list.
-func ValidateLoader(loader string) error {
-	if loader != LoaderVanilla {
-		return &ValidationError{Field: "loader", Message: `must be "vanilla"`}
-	}
-	return nil
-}
-
 func ValidateServerMemory(mb int) error {
 	if mb < ServerMemoryMinMB || mb > ServerMemoryMaxMB {
 		return &ValidationError{Field: "memory_mb", Message: "must be between 512 and 16384"}
@@ -151,6 +141,7 @@ func ValidateServerCPU(millicores, hostCPUs int) error {
 type ContainerSpec struct {
 	ServerID      string
 	Game          string
+	Java          string   // one of Java* (installer.go): selects the game image
 	Env           []string // KEY=value
 	DataDir       string   // absolute host directory mounted as the server's /data
 	Port          int      // host TCP port published for the game

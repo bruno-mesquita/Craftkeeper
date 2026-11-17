@@ -46,6 +46,7 @@ unless marked *planned*.
 | 500 | `internal_error` | Unexpected server error (details only in logs) |
 | 502 | `docker_error` | Docker rejected the operation (details only in logs) |
 | 503 | `docker_unavailable` | The Docker daemon cannot be reached |
+| 503 | `installer_unavailable` | An official version source (Mojang, Fabric, Forge, NeoForge) cannot be reached |
 
 ## Objects
 
@@ -149,7 +150,7 @@ its database; other containers on the host are never listed or touched.
 ```json
 {
   "id": "26 characters [A-Z2-7]", "name": "Survival", "description": "",
-  "game": "minecraft", "loader": "vanilla", "version": "LATEST",
+  "game": "minecraft", "loader": "forge", "version": "1.20.1", "loader_version": "47.3.0",
   "status": "running",
   "memory_mb": 2048, "cpu_cores": 1.5, "port": 25601,
   "container_id": "64-char hex", "created_at": "...", "updated_at": "..."
@@ -159,6 +160,9 @@ its database; other containers on the host are never listed or touched.
 `running`, `starting` (running, health check not passed yet), `stopped`, `restarting`,
 `missing` (container gone or no longer labelled for this server), `unknown` (Docker unreachable).
 `cpu_cores` is a number (0.5 = half a core); it is stored with 0.001-core precision.
+`loader` is `vanilla`, `fabric`, `forge` or `neoforge`. `version` is the Minecraft release
+(`"LATEST"` only for vanilla: it follows the newest release on every start). `loader_version`
+is the exact loader build installed (empty for vanilla); it never changes by itself.
 
 An `{id}` that is not a valid server ID answers `404 not_found` without any lookup.
 
@@ -167,17 +171,24 @@ An `{id}` that is not a valid server ID answers `404 not_found` without any look
 list is still returned, with status `unknown`.
 
 ### `POST /servers` — auth + CSRF
-Body: `{"name", "description"?, "version"?, "memory_mb", "cpu_cores", "port"?, "accept_eula"}`.
+Body: `{"name", "description"?, "loader"?, "version"?, "loader_version"?, "memory_mb", "cpu_cores", "port"?, "accept_eula"}`.
 - `name`: 1–48 printable characters, no surrounding spaces, unique (case-insensitive).
 - `description`: up to 500 characters.
-- `version`: `"LATEST"` (default) or a release such as `"1.21.4"`.
+- `loader`: `vanilla` (default), `fabric`, `forge` or `neoforge`.
+- `version`: vanilla: `"LATEST"` (default) or a release such as `"1.21.4"`. Modded: required,
+  a release the loader supports (see Installers).
+- `loader_version`: modded only; a build listed for that release. Omitted: the recommended build
+  is chosen and stored.
 - `memory_mb`: 512–16384. `cpu_cores`: 0.5 up to the number of host CPUs.
 - `port`: within the configured game port range; omitted or `0` picks the first free one.
 - `accept_eula`: must be `true` (the Minecraft EULA).
 
-Pulls the pinned game image if needed (the first creation can take minutes), creates the data
-directory and a **stopped** container. On failure nothing is left behind.
-`201 Server` · `422` (`field` names the input) · `502 docker_error` · `503 docker_unavailable`.
+Modded servers are checked against the official version lists (cached for 1 hour). Pulls the
+pinned game image for the release's Java version if needed (the first creation can take
+minutes), creates the data directory and a **stopped** container. Forge and NeoForge run their
+installer on the first start. On failure nothing is left behind.
+`201 Server` · `422` (`field` names the input) · `502 docker_error` · `503 docker_unavailable` ·
+`503 installer_unavailable` (modded only).
 
 ### `GET /servers/{id}` — auth
 `200 Server` · `404`.
@@ -201,6 +212,22 @@ Stops the server gracefully, removes its container, then deletes its files and b
 `backups/.deleted/<id>-<unix time>` (default), and removes the record. A container that is already gone, or that no longer carries this server's
 labels, is left alone and only forgotten.
 `204` · `404` · `422` (invalid `delete_files`) · `502` · `503`.
+
+## Installers
+
+Version lists read from the official sources (Mojang, Fabric meta, Forge and NeoForge maven),
+cached for 1 hour. A source that cannot be reached answers `503 installer_unavailable`.
+
+### `GET /installers/{loader}/versions` — auth
+`200 {"versions": ["1.21.1", "1.20.1", …]}`: the Minecraft releases the loader supports, newest
+first (no snapshots). For `vanilla` the list starts with `"LATEST"`. Always an array.
+`404` unknown loader · `503 installer_unavailable`.
+
+### `GET /installers/{loader}/versions/{minecraft}` — auth
+`200 {"loader_versions": ["47.4.5", "47.3.0", …], "recommended": "47.3.0"}`, newest first.
+Recommended: Fabric's newest stable loader; Forge's promoted build (`recommended`, else
+`latest`); NeoForge's newest non-beta build (else the newest).
+`404` vanilla, unknown loader or release not supported · `503 installer_unavailable`.
 
 ## Files
 

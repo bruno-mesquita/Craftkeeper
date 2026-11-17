@@ -24,6 +24,7 @@ import (
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/backups"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/dashboard"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/files"
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/installers"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/monitoring"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
 	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
@@ -65,6 +66,7 @@ type client struct {
 	http *http.Client
 	csrf string
 	rt   *stubRuntime
+	src  *stubSource
 
 	serversDir string
 }
@@ -93,11 +95,12 @@ func newServerWith(t *testing.T, containers monitoring.ContainerCollector) *clie
 		"assets/js/app.js":   {Data: []byte("// app")},
 		"assets/css/app.css": {Data: []byte("body{}")},
 	}
-	rt := newStubRuntime()
+	rt, src := newStubRuntime(), &stubSource{}
+	installersSvc := installers.NewService(src, time.Hour)
 	dataDir := t.TempDir()
 	serversDir, backupsDir := filepath.Join(dataDir, "servers"), filepath.Join(dataDir, "backups")
 	serversSvc := servers.NewService(sqlite.NewServers(store), rt, filesystem.NewServerDirs(serversDir, backupsDir, os.Getuid(), os.Getgid()),
-		audit, servers.Config{FirstPort: 25601, LastPort: 25700, HostCPUs: 4, PortFree: func(int) bool { return true }})
+		installersSvc, audit, servers.Config{FirstPort: 25601, LastPort: 25700, HostCPUs: 4, PortFree: func(int) bool { return true }})
 	serverFiles := filesystem.NewServerFiles(serversDir, os.Getuid(), os.Getgid())
 	backupsSvc := backups.NewService(sqlite.NewBackups(store), filesystem.NewBackups(backupsDir, serverFiles),
 		serversSvc, stubConsole{}, audit, log)
@@ -105,13 +108,13 @@ func newServerWith(t *testing.T, containers monitoring.ContainerCollector) *clie
 	api := httpapi.New(authSvc,
 		monitoring.NewService(stubCollector{}, containers, time.Second),
 		dashboard.NewService(docker.NewClient(filepath.Join(t.TempDir(), "no-docker.sock")), serversSvc, audit),
-		serversSvc, files.NewService(serverFiles, serversSvc, audit), backupsSvc,
+		serversSvc, installersSvc, files.NewService(serverFiles, serversSvc, audit), backupsSvc,
 		wspres.NewHub(authSvc, nil, log), static, log)
 
 	srv := httptest.NewServer(api.Handler())
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
-	return &client{t: t, base: srv.URL, http: &http.Client{Jar: jar}, rt: rt, serversDir: serversDir}
+	return &client{t: t, base: srv.URL, http: &http.Client{Jar: jar}, rt: rt, src: src, serversDir: serversDir}
 }
 
 // do sends a same-origin request the way a browser would (Sec-Fetch-Site: same-origin).

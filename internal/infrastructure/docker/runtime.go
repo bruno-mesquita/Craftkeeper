@@ -17,14 +17,28 @@ import (
 	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
 )
 
-// Game server image, pinned by the digest of its multi-arch index (release 2026.11.0, Java 25).
-// Pulling by digest makes the content verified by the daemon; the tag is informational.
-const (
-	imageRepo   = "itzg/minecraft-server"
-	imageTag    = "2026.11.0"
-	imageDigest = "sha256:8d5080d8dcd0a2629c2e4f248678373a337a40537ad6ef2857c7dbcda6e3eadd"
-	image       = imageRepo + "@" + imageDigest
-)
+// Game server images (itzg/minecraft-server release 2026.11.0), one per Java runtime, each
+// pinned by the digest of its multi-arch index. Pulling by digest makes the content verified
+// by the daemon; the tags are informational. Digests read from Docker Hub on 2026-11-17.
+const imageRepo = "itzg/minecraft-server"
+
+type gameImage struct{ tag, digest string }
+
+var gameImages = map[string]gameImage{
+	domain.Java8:  {"2026.11.0-java8", "sha256:91c8edad666c51ce0148022931dac327c973e6d8084cddb0e9090e2c60622f9c"},
+	domain.Java17: {"2026.11.0-java17", "sha256:35f069ed801f4b14655acb52fdb7745dccfe69399867f57608ae4136a32c3c9e"},
+	domain.Java21: {"2026.11.0-java21", "sha256:5fbaa7d1eb8d5575cd009c247f872d1fd6b5cd0f096e8ea173648cd4e43d52d4"},
+	domain.Java25: {"2026.11.0", "sha256:8d5080d8dcd0a2629c2e4f248678373a337a40537ad6ef2857c7dbcda6e3eadd"},
+}
+
+// imageFor returns the pinned image reference of a Java runtime.
+func imageFor(java string) (gameImage, string, error) {
+	img, ok := gameImages[java]
+	if !ok {
+		return gameImage{}, "", fmt.Errorf("docker: unknown java runtime %q", java)
+	}
+	return img, imageRepo + "@" + img.digest, nil
+}
 
 // Fixed container policy.
 const (
@@ -54,12 +68,16 @@ func NewRuntime(c *Client, uid, gid int) *Runtime {
 	return &Runtime{client: c, user: fmt.Sprintf("%d:%d", uid, gid)}
 }
 
-// EnsureImage pulls the pinned image unless the daemon already has it.
-func (r *Runtime) EnsureImage(ctx context.Context) error {
+// EnsureImage pulls the pinned image of a Java runtime unless the daemon already has it.
+func (r *Runtime) EnsureImage(ctx context.Context, java string) error {
+	img, ref, err := imageFor(java)
+	if err != nil {
+		return err
+	}
 	r.pullLock.Lock()
 	defer r.pullLock.Unlock()
 
-	_, err := r.client.call(ctx, http.MethodGet, "/images/"+image+"/json", nil, defaultTimeout, 0, nil)
+	_, err = r.client.call(ctx, http.MethodGet, "/images/"+ref+"/json", nil, defaultTimeout, 0, nil)
 	var apiErr *apiError
 	if err == nil {
 		return nil
@@ -67,15 +85,15 @@ func (r *Runtime) EnsureImage(ctx context.Context) error {
 	if !errors.As(err, &apiErr) || apiErr.status != http.StatusNotFound {
 		return mapError("inspect image", err)
 	}
-	return r.pull(ctx)
+	return r.pull(ctx, img.digest)
 }
 
 // pull streams POST /images/create until EOF. Docker reports failures inside the stream
 // (HTTP status stays 200), so every message is checked for an error.
-func (r *Runtime) pull(ctx context.Context) error {
+func (r *Runtime) pull(ctx context.Context, digest string) error {
 	ctx, cancel := context.WithTimeout(ctx, pullTimeout)
 	defer cancel()
-	q := url.Values{"fromImage": {imageRepo}, "tag": {imageDigest}}
+	q := url.Values{"fromImage": {imageRepo}, "tag": {digest}}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://docker"+apiVersion+"/images/create?"+q.Encode(), nil)
 	if err != nil {
 		return err
@@ -151,9 +169,13 @@ func (r *Runtime) Create(ctx context.Context, spec domain.ContainerSpec) (string
 	if spec.Port < 1 || spec.Port > 65535 {
 		return "", fmt.Errorf("docker: invalid port %d", spec.Port)
 	}
+	_, ref, err := imageFor(spec.Java)
+	if err != nil {
+		return "", err
+	}
 
 	body := createRequest{
-		Image: image,
+		Image: ref,
 		User:  r.user,
 		Env:   spec.Env,
 		Labels: map[string]string{
