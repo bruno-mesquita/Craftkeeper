@@ -30,6 +30,7 @@ import (
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/password"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/sqlite"
 	httpapi "github.com/bruno-mesquita/mesquita-panel/internal/presentation/http"
+	wspres "github.com/bruno-mesquita/mesquita-panel/internal/presentation/websocket"
 	"github.com/bruno-mesquita/mesquita-panel/migrations"
 )
 
@@ -94,7 +95,7 @@ func newServerWith(t *testing.T, containers monitoring.ContainerCollector) *clie
 	api := httpapi.New(authSvc,
 		monitoring.NewService(stubCollector{}, containers, time.Second),
 		dashboard.NewService(docker.NewClient(filepath.Join(t.TempDir(), "no-docker.sock")), serversSvc, audit),
-		serversSvc, static, log)
+		serversSvc, wspres.NewHub(authSvc, nil, log), static, log)
 
 	srv := httptest.NewServer(api.Handler())
 	t.Cleanup(srv.Close)
@@ -345,4 +346,23 @@ func TestContainerStats(t *testing.T) {
 	c.setupAndLogin()
 	res, body = c.do("GET", "/api/v1/system/containers", nil, nil)
 	expect(t, res, body, http.StatusServiceUnavailable, "docker_unavailable")
+}
+
+// The WebSocket endpoint requires a session; the handshake itself is covered by the
+// presentation/websocket contract tests.
+func TestWebSocketEndpointRequiresAuth(t *testing.T) {
+	c := newServer(t)
+	upgrade := map[string]string{
+		"Connection": "Upgrade", "Upgrade": "websocket", "Sec-WebSocket-Version": "13",
+		"Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==", "Origin": c.base,
+	}
+	res, body := c.do("GET", "/api/v1/ws", nil, upgrade)
+	expect(t, res, body, http.StatusUnauthorized, "unauthenticated")
+
+	c.setupAndLogin()
+	res, body = c.do("GET", "/api/v1/ws", nil, nil)
+	expect(t, res, body, http.StatusBadRequest, "bad_handshake")
+	upgrade["Origin"] = "http://evil.example"
+	res, body = c.do("GET", "/api/v1/ws", nil, upgrade)
+	expect(t, res, body, http.StatusForbidden, "origin_not_allowed")
 }

@@ -5,9 +5,10 @@ import { renderShell } from './shell.js';
 const app = document.getElementById('app');
 
 // Route table. Page modules are lazy-loaded and must export mount(container, ctx) -> cleanup.
+// A route with `detail` also matches #/<name>/<param> (ctx.param), e.g. #/servers/<id>.
 const routes = {
   overview: { title: 'Overview', load: () => import('./pages/overview.js') },
-  servers: { title: 'Servers', load: () => import('./pages/servers.js') },
+  servers: { title: 'Servers', load: () => import('./pages/servers.js'), detail: () => import('./pages/server.js') },
   backups: { title: 'Backups', load: () => import('./pages/planned.js'), phase: 6 },
   users: { title: 'Users', load: () => import('./pages/planned.js'), phase: null },
   settings: { title: 'Settings', load: () => import('./pages/settings.js') },
@@ -43,9 +44,9 @@ async function showPublicPage(module) {
 
 async function route() {
   if (!session) return;
-  const name = location.hash.replace(/^#\/?/, '') || 'overview';
+  const [name, param] = (location.hash.replace(/^#\/?/, '') || 'overview').split('/', 2);
   const def = routes[name];
-  if (!def) {
+  if (!def || (param !== undefined && !def.detail)) {
     location.replace('#/overview');
     return;
   }
@@ -54,9 +55,9 @@ async function route() {
   shell ??= renderShell(app, { routes, session, onLogout: logout });
   shell.setActive(name);
   document.title = `${def.title} · Mesquita Panel`;
-  const page = await def.load();
+  const page = await (param !== undefined ? def.detail() : def.load());
   if (current !== navigation) return;
-  cleanup = page.mount(shell.main, { session, route: def }) ?? null;
+  cleanup = page.mount(shell.main, { session, route: def, param }) ?? null;
   shell.main.focus({ preventScroll: true });
 }
 

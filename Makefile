@@ -54,7 +54,7 @@ fmt:
 	$(GO_RUN) gofmt -l -w $(GO_DIRS)
 
 tidy:
-	$(GO_RUN) go mod tidy
+	$(GO_RUN) go mod tidy 2>&1 | tee $(LOG)
 
 # Tailwind standalone CLI (no Node). Output is committed and embedded; production never builds CSS.
 css: $(TAILWIND_BIN)

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"log/slog"
@@ -47,6 +48,12 @@ func (s *statusRecorder) WriteHeader(code int) {
 }
 
 func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
+// Hijack lets WebSocket handshakes take over the connection through this wrapper.
+func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	s.status = http.StatusSwitchingProtocols
+	return http.NewResponseController(s.ResponseWriter).Hijack()
+}
 
 func requestLog(log *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

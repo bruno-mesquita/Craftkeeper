@@ -10,6 +10,7 @@ import (
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/dashboard"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/monitoring"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
+	wspres "github.com/bruno-mesquita/mesquita-panel/internal/presentation/websocket"
 )
 
 // API wires HTTP routes to application services.
@@ -18,12 +19,13 @@ type API struct {
 	monitoring *monitoring.Service
 	dashboard  *dashboard.Service
 	servers    *servers.Service
+	ws         *wspres.Hub
 	static     fs.FS
 	log        *slog.Logger
 }
 
-func New(a *auth.Service, m *monitoring.Service, d *dashboard.Service, s *servers.Service, static fs.FS, log *slog.Logger) *API {
-	return &API{auth: a, monitoring: m, dashboard: d, servers: s, static: static, log: log}
+func New(a *auth.Service, m *monitoring.Service, d *dashboard.Service, s *servers.Service, ws *wspres.Hub, static fs.FS, log *slog.Logger) *API {
+	return &API{auth: a, monitoring: m, dashboard: d, servers: s, ws: ws, static: static, log: log}
 }
 
 // Handler returns the complete HTTP handler with middleware applied.
@@ -53,6 +55,8 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/servers/{id}/restart", a.requireAuth(a.withServerID(a.serverAction(a.servers.Restart))))
 	mux.HandleFunc("POST /api/v1/servers/{id}/kill", a.requireAuth(a.withServerID(a.serverAction(a.servers.Kill))))
 
+	mux.HandleFunc("GET /api/v1/ws", a.requireAuth(a.websocket))
+
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "unknown API endpoint")
 	})
@@ -65,6 +69,17 @@ func (a *API) Handler() http.Handler {
 	h = requestLog(a.log, h)
 	h = securityHeaders(h)
 	return recoverPanics(a.log, h)
+}
+
+// websocket hands an authenticated handshake to the WebSocket manager (docs/WEBSOCKET.md).
+// The session token is passed along so the manager can re-check it while the connection lives.
+func (a *API) websocket(w http.ResponseWriter, r *http.Request) {
+	c, err := r.Cookie(sessionCookie)
+	if err != nil { // requireAuth already checked it
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "authentication required")
+		return
+	}
+	a.ws.Serve(w, r, identityFrom(r.Context()), c.Value, clientIP(r))
 }
 
 // staticHandler serves the embedded frontend without directory listings.

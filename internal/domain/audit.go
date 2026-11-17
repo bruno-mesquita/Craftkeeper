@@ -16,6 +16,8 @@ const (
 	AuditServerRestart = "server.restart"
 	AuditServerKill    = "server.kill"
 	AuditServerDelete  = "server.delete"
+	// AuditConsoleCommand targets "<server id>: <command>", the command truncated.
+	AuditConsoleCommand = "server.console_command"
 )
 
 type AuditEvent struct {

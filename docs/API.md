@@ -199,7 +199,14 @@ removes the record. A container that is already gone, or that no longer carries 
 labels, is left alone and only forgotten.
 `204` · `404` · `422` (invalid `delete_files`) · `502` · `503`.
 
+## WebSocket
+
+### `GET /ws` — auth
+Live console and server status. Protocol, messages, limits and close codes:
+[`WEBSOCKET.md`](WEBSOCKET.md). Handshake errors: `400 bad_handshake` ·
+`401 unauthenticated` · `403 origin_not_allowed` · `429 too_many_connections` ·
+`503 shutting_down`.
+
 ## Planned
 
-WebSocket `/ws` (phase 4, see `WEBSOCKET.md`), files (phase 5),
-backups (phase 6) — as listed in `docs/SPEC.md` §10.
+Files (phase 5), backups (phase 6) — as listed in `docs/SPEC.md` §10.

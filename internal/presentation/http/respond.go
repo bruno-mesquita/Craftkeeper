@@ -54,6 +54,8 @@ func writeDomainError(w http.ResponseWriter, log *slog.Logger, err error) {
 	case errors.Is(err, domain.ErrDockerUnavailable):
 		log.Warn("docker unavailable", "err", err)
 		writeError(w, http.StatusServiceUnavailable, "docker_unavailable", "Docker is not reachable")
+	case errors.Is(err, domain.ErrServerNotRunning):
+		writeError(w, http.StatusConflict, "server_not_running", "the server is not running")
 	case errors.Is(err, domain.ErrServerRunning):
 		writeError(w, http.StatusConflict, "server_running", "stop the server before changing its limits")
 	case errors.Is(err, domain.ErrContainerMissing):

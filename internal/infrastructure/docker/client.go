@@ -136,6 +136,31 @@ func (c *Client) call(ctx context.Context, method, pathAndQuery string, in any, 
 	return resp.StatusCode, json.Unmarshal(b, out)
 }
 
+// stream sends one request to a versioned Engine API path and returns the open response for
+// the caller to consume and close. It has no deadline of its own: the stream lives until ctx
+// is cancelled or the daemon ends it. Errors are translated like call's.
+func (c *Client) stream(ctx context.Context, method, pathAndQuery string, header http.Header) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, "http://docker"+apiVersion+pathAndQuery, nil)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range header {
+		req.Header[k] = v
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, fmt.Errorf("%w: %v", domain.ErrDockerUnavailable, err)
+	}
+	if (resp.StatusCode < 200 || resp.StatusCode > 299) && resp.StatusCode != http.StatusSwitchingProtocols {
+		defer resp.Body.Close()
+		return nil, readAPIError(resp)
+	}
+	return resp, nil
+}
+
 func readAPIError(resp *http.Response) error {
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes))
 	var e struct {

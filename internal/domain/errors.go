@@ -14,6 +14,7 @@ var (
 	ErrDockerUnavailable  = errors.New("docker unavailable")
 	ErrDockerFailed       = errors.New("docker rejected the operation")
 	ErrServerRunning      = errors.New("server is running")
+	ErrServerNotRunning   = errors.New("server is not running")
 	ErrContainerMissing   = errors.New("server container is missing")
 	ErrPortInUse          = errors.New("port already in use")
 	ErrNotManaged         = errors.New("container is not managed by this server")

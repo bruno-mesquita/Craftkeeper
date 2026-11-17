@@ -1,23 +1,15 @@
 // Servers: list with live status and usage, creation, editing and lifecycle actions.
-// Polled every few seconds while visible (moves to WebSocket in phase 4). Rows are keyed by
-// server ID and updated in place so keyboard focus survives refreshes.
+// Polled every few seconds while visible (status and usage of every server; the server page
+// gets live status over WebSocket). Rows are keyed by server ID and updated in place so
+// keyboard focus survives refreshes.
 import { api } from '../api.js';
 import { confirmDialog, openDialog } from '../dialog.js';
 import { clearFormError, field, formValues, h, showFormError, toast } from '../dom.js';
 import { bytes, percent } from '../format.js';
+import { ACTIONS, ACTIVE, STATUS, confirmAction, lifecycleActions, runAction } from '../server-actions.js';
 
 const REFRESH_MS = 3000;
 const EULA_URL = 'https://aka.ms/MinecraftEULA';
-
-const STATUS = {
-  running: { label: 'Running', tone: 'text-success border-success/40' },
-  starting: { label: 'Starting', tone: 'text-warning border-warning/40' },
-  restarting: { label: 'Restarting', tone: 'text-warning border-warning/40' },
-  stopped: { label: 'Stopped', tone: 'text-muted' },
-  missing: { label: 'Container missing', tone: 'text-danger border-danger/40' },
-  unknown: { label: 'Unknown', tone: 'text-warning border-warning/40' },
-};
-const ACTIVE = new Set(['running', 'starting', 'restarting']);
 
 export function mount(root) {
   const rows = new Map(); // server ID -> row handle
@@ -82,7 +74,7 @@ export function mount(root) {
   }
 
   function createRow() {
-    const name = h('span', { class: 'font-medium' });
+    const name = h('a', { class: 'font-medium hover:underline' });
     const desc = h('span', { class: 'block max-w-xs truncate text-xs text-muted' });
     const status = h('span', { class: 'badge' });
     const version = h('td', { class: 'py-3 pr-4 whitespace-nowrap' });
@@ -101,6 +93,7 @@ export function mount(root) {
       tr,
       update(s) {
         name.textContent = s.name;
+        name.href = `#/servers/${s.id}`;
         desc.textContent = s.description;
         desc.hidden = !s.description;
         const st = STATUS[s.status] ?? STATUS.unknown;
@@ -127,13 +120,9 @@ export function mount(root) {
   function actionButtons(s, disabled) {
     const btn = (label, onclick, cls = 'btn-ghost') =>
       h('button', { class: `btn ${cls} px-2 py-1`, type: 'button', disabled, onclick, 'aria-label': `${label} ${s.name}` }, label);
-    const list = [];
-    if (s.status === 'stopped') list.push(btn('Start', () => act(s, 'start', 'Starting…')));
-    if (ACTIVE.has(s.status)) {
-      list.push(btn('Stop', () => act(s, 'stop', 'Stopping…')));
-      list.push(btn('Restart', () => act(s, 'restart', 'Restarting…')));
-      list.push(btn('Kill', () => killServer(s)));
-    }
+    const list = lifecycleActions(s.status).map((a) => btn(ACTIONS[a].label, async () => {
+      if (await confirmAction(s, a)) act(s, a, ACTIONS[a].busy);
+    }));
     if (s.status !== 'unknown') list.push(btn('Edit', () => editDialog(s)));
     if (s.status !== 'unknown') list.push(btn('Delete', () => deleteServer(s), 'btn-ghost text-danger'));
     return list;
@@ -141,7 +130,7 @@ export function mount(root) {
 
   // act runs a lifecycle request; the row shows the action until it finishes.
   // Resolves to true on success; failures are reported in a toast.
-  async function act(s, action, label, request = () => api('POST', `/servers/${s.id}/${action}`)) {
+  async function act(s, action, label, request = () => runAction(s, action)) {
     busy.set(s.id, label);
     render();
     try {
@@ -154,15 +143,6 @@ export function mount(root) {
       busy.delete(s.id);
       await refresh();
     }
-  }
-
-  async function killServer(s) {
-    const ok = await confirmDialog({
-      title: `Kill ${s.name}?`,
-      message: 'The game process is terminated immediately. Unsaved world changes are lost. Prefer Stop.',
-      confirmLabel: 'Kill', danger: true,
-    });
-    if (ok) act(s, 'kill', 'Killing…');
   }
 
   async function deleteServer(s) {

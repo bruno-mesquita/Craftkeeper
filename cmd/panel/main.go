@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/auth"
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/console"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/dashboard"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/monitoring"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
@@ -28,6 +29,7 @@ import (
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/password"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/sqlite"
 	httpapi "github.com/bruno-mesquita/mesquita-panel/internal/presentation/http"
+	wspres "github.com/bruno-mesquita/mesquita-panel/internal/presentation/websocket"
 	"github.com/bruno-mesquita/mesquita-panel/migrations"
 	"github.com/bruno-mesquita/mesquita-panel/web"
 )
@@ -90,20 +92,36 @@ func run() error {
 	}
 	monitoringSvc := monitoring.NewService(metrics.NewLinux("/proc", cfg.DataDir), docker.NewStatsCollector(dockerClient, log), metricsCacheTTL)
 	uid, gid := containerUser(log)
-	serversSvc := servers.NewService(sqlite.NewServers(store), docker.NewRuntime(dockerClient, uid, gid),
+	containers := docker.NewRuntime(dockerClient, uid, gid)
+	serversSvc := servers.NewService(sqlite.NewServers(store), containers,
 		filesystem.NewServerDirs(cfg.ServersDir(), uid, gid), auditLog, servers.Config{
 			FirstPort: cfg.GamePorts.First, LastPort: cfg.GamePorts.Last,
 			HostCPUs: runtime.NumCPU(), PortFree: hostnet.TCPPortFree,
 		})
 	dashboardSvc := dashboard.NewService(dockerClient, serversSvc, auditLog)
 
-	handler := httpapi.New(authSvc, monitoringSvc, dashboardSvc, serversSvc, web.FS, log).Handler()
-	return serve(ctx, log, cfg.Listen, handler)
+	// The console's event loop lives as long as the process; its feeds as long as viewers.
+	consoleSvc := console.NewService(containers, dockerClient, serversSvc, auditLog, log)
+	eventsDone := make(chan struct{})
+	go func() {
+		defer close(eventsDone)
+		consoleSvc.Run(ctx)
+	}()
+	defer func() {
+		stop() // ends Run when serve failed without a signal
+		<-eventsDone
+		consoleSvc.Close()
+	}()
+	hub := wspres.NewHub(authSvc, consoleSvc, log)
+
+	handler := httpapi.New(authSvc, monitoringSvc, dashboardSvc, serversSvc, hub, web.FS, log).Handler()
+	return serve(ctx, log, cfg.Listen, handler, hub)
 }
 
 // serve binds every configured address before accepting traffic, then shuts all
-// servers down gracefully when ctx is cancelled or any server fails.
-func serve(ctx context.Context, log *slog.Logger, addrs []string, handler http.Handler) error {
+// servers down gracefully when ctx is cancelled or any server fails. WebSocket connections
+// are hijacked, so http.Server.Shutdown does not wait for them: the hub closes them after.
+func serve(ctx context.Context, log *slog.Logger, addrs []string, handler http.Handler, hub *wspres.Hub) error {
 	var listeners []net.Listener
 	for _, addr := range addrs {
 		ln, err := net.Listen("tcp", addr)
@@ -151,6 +169,9 @@ func serve(ctx context.Context, log *slog.Logger, addrs []string, handler http.H
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			log.Warn("graceful shutdown incomplete", "err", err)
 		}
+	}
+	if err := hub.Shutdown(shutdownCtx); err != nil {
+		log.Warn("websocket connections not closed in time", "err", err)
 	}
 	return runErr
 }
