@@ -6,6 +6,8 @@ import { api } from '../api.js';
 import { confirmDialog, openDialog } from '../dialog.js';
 import { clearFormError, field, formValues, h, showFormError, toast } from '../dom.js';
 import { bytes, percent } from '../format.js';
+import { mountModpackManager } from '../modpack-manager.js';
+import { detectModpack } from '../modpack-zip.js';
 import { ACTIONS, ACTIVE, LOADERS, STATUS, confirmAction, gameVersion, lifecycleActions, runAction } from '../server-actions.js';
 
 const REFRESH_MS = 3000;
@@ -174,8 +176,8 @@ export function mount(root) {
       button.disabled = true;
       button.textContent = busyLabel;
       try {
-        await send(formValues(form));
-        close();
+        const stay = await send(formValues(form));
+        if (stay !== 'stay-open') close();
         refresh();
       } catch (err) {
         showFormError(form, err);
@@ -200,13 +202,20 @@ export function mount(root) {
       'Mod loaders need more memory (4 GB or more for most modpacks). Forge and NeoForge install on the first start, which takes a few minutes. Add mods to the mods folder in the Files tab.');
     const limits = limitFields();
     const memory = limits[0].querySelector('input');
+    const packInput = h('input', { class: 'input', name: 'modpack', type: 'file', accept: '.zip,application/zip' });
+    const packField = field('Modpack server pack ZIP (optional)', packInput);
+    const packStatus = h('p', { class: 'text-xs text-muted', role: 'status', hidden: true });
+    // Type and version fields: replaced by what the pack's variables.txt declares.
+    const manual = h('div', { class: 'flex flex-col gap-4' },
+      h('div', { class: 'grid grid-cols-2 gap-4' }, field('Server type', loader), versionSlot),
+      loaderVersionField, versionStatus, moddedHint);
+    let detected = null;
     const form = h('form', { class: 'flex flex-col gap-4', novalidate: true },
       field('Name', h('input', { class: 'input', name: 'name', required: true, maxlength: '48', autocomplete: 'off' })),
       field('Description', h('input', { class: 'input', name: 'description', maxlength: '500', autocomplete: 'off' })),
-      h('div', { class: 'grid grid-cols-2 gap-4' }, field('Server type', loader), versionSlot),
-      loaderVersionField,
-      versionStatus,
-      moddedHint,
+      packField,
+      packStatus,
+      manual,
       h('div', { class: 'grid grid-cols-2 gap-4' }, ...limits),
       field('Port (empty = first free)', h('input', { class: 'input', name: 'port', type: 'number', min: '1024', max: '65535', autocomplete: 'off' })),
       h('label', { class: 'flex items-start gap-2' },
@@ -284,23 +293,57 @@ export function mount(root) {
       }
     }
 
+    packInput.addEventListener('change', async () => {
+      const pack = packInput.files?.[0];
+      detected = pack ? await detectModpack(pack) : null;
+      if (packInput.files?.[0] !== pack) return; // a newer choice replaced this one
+      manual.hidden = Boolean(detected);
+      packStatus.hidden = !pack;
+      if (detected) {
+        packStatus.textContent = `Detected from the pack: ${LOADERS[detected.loader]} ${detected.version}${detected.loaderVersion ? ` · ${detected.loaderVersion}` : ''}${detected.heapMB ? `, heap ${detected.heapMB} MB` : ''}.`;
+        // The container limit needs headroom over the JVM heap (metaspace, threads, native memory).
+        memory.value = String(Math.min(16384, detected.heapMB ? detected.heapMB + 1024 : Math.max(4096, Number(memory.value))));
+        button.disabled = false;
+      } else if (pack) {
+        packStatus.textContent = 'No usable variables.txt in the ZIP: choose the server type and Minecraft version below.';
+      }
+    });
     loader.addEventListener('change', loadVersions);
     loadVersions();
 
     const { close } = openDialog({ title: 'New server', content: form });
     cancel.addEventListener('click', close);
     form.querySelector('[name="name"]').focus();
-    submitForm(form, button, 'Creating…', (v) => api('POST', '/servers', {
-      name: v.name.trim(),
-      description: v.description.trim(),
-      loader: v.loader,
-      version: (v.version ?? '').trim(),
-      ...(v.loader_version ? { loader_version: v.loader_version } : {}),
-      memory_mb: Number(v.memory_mb),
-      cpu_cores: Number(v.cpu_cores),
-      port: v.port ? Number(v.port) : 0,
-      accept_eula: v.accept_eula === 'on',
-    }).then((s) => toast(`${s.name} created on port ${s.port}. Start it when ready.`, 'success')), close);
+    submitForm(form, button, 'Creating…', async (v) => {
+      const pack = form.querySelector('[name="modpack"]').files?.[0];
+      const created = await api('POST', '/servers', {
+        name: v.name.trim(),
+        description: v.description.trim(),
+        loader: detected?.loader ?? v.loader,
+        version: detected?.version ?? (v.version ?? '').trim(),
+        ...((detected ? detected.loaderVersion : v.loader_version) ? { loader_version: detected ? detected.loaderVersion : v.loader_version } : {}),
+        memory_mb: Number(v.memory_mb),
+        cpu_cores: Number(v.cpu_cores),
+        port: v.port ? Number(v.port) : 0,
+        accept_eula: v.accept_eula === 'on',
+      });
+      if (!pack) {
+        toast(`${created.name} created on port ${created.port}. Start it when ready.`, 'success');
+        return;
+      }
+      // The server exists now: keep the dialog and continue with the modpack step.
+      toast(`${created.name} created on port ${created.port}.`, 'success');
+      const root = h('div');
+      const done = h('button', { class: 'btn btn-ghost', type: 'button' }, 'Close');
+      done.addEventListener('click', close);
+      form.replaceChildren(root, h('div', { class: 'flex justify-end' }, done));
+      mountModpackManager(root, {
+        id: created.id,
+        initialFile: pack,
+        onInstall: () => { close(); location.hash = `#/servers/${created.id}`; },
+      });
+      return 'stay-open';
+    }, close);
   }
 
   function editDialog(s) {

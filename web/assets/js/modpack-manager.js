@@ -2,7 +2,7 @@
 import { api, upload } from './api.js';
 import { field, h, toast } from './dom.js';
 
-export function mountModpackManager(root, { id, onInstall }) {
+export function mountModpackManager(root, { id, onInstall, initialFile }) {
   const status = h('p', { class: 'text-sm text-muted', role: 'status' });
   const progress = h('progress', { class: 'w-full', max: '1', value: '0', hidden: true });
   const file = h('input', { class: 'input', type: 'file', accept: '.zip,application/zip' });
@@ -60,9 +60,7 @@ export function mountModpackManager(root, { id, onInstall }) {
     }
   }
 
-  importButton.addEventListener('click', async () => {
-    const pack = file.files?.[0];
-    if (!pack) { toast('Choose a ZIP file first.', 'error'); return; }
+  async function importPack(pack) {
     importButton.disabled = true;
     progress.hidden = false;
     status.textContent = 'Uploading ZIP…';
@@ -77,6 +75,12 @@ export function mountModpackManager(root, { id, onInstall }) {
       importButton.disabled = false;
       progress.hidden = true;
     }
+  }
+
+  importButton.addEventListener('click', () => {
+    const pack = file.files?.[0];
+    if (!pack) { toast('Choose a ZIP file first.', 'error'); return; }
+    importPack(pack);
   });
 
   saveButton.addEventListener('click', async () => {
@@ -101,7 +105,7 @@ export function mountModpackManager(root, { id, onInstall }) {
     }
   });
 
-  refresh();
+  refresh().then(() => { if (initialFile) importPack(initialFile); });
   return { refresh, setRunning(value) { if (running === value) return; running = value; applyState(); } };
 }
 

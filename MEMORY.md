@@ -263,6 +263,10 @@ Plano: `~/.claude/plans/na-tela-de-detalhes-glittery-panda.md`.
   inicia o script do servidor; os próximos starts executam apenas o script de inicialização.
   Saída passa pelo console Docker já existente. Se o instalador falha, o container fica ocioso
   para não entrar em loop de restart; parar e iniciar novamente tenta a instalação outra vez.
+- O ZIP também pode ser escolhido no diálogo "New server": o frontend cria o servidor
+  (`POST /servers`) e então reusa `mountModpackManager` (`initialFile`) no mesmo diálogo para
+  upload, extração, escolha de scripts e instalação. Sem mudança de API/backend; se o import
+  falha, o servidor já existe e o retry é possível no diálogo ou na aba Modpack.
 - Containers criados antes deste wrapper continuam sem alteração e retornam `supported=false`.
 - **Verificação pendente:** não executada nesta implementação; falta validar compilation/contratos
   e um ZIP de server pack real no container.
