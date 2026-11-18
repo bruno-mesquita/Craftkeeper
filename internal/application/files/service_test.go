@@ -124,7 +124,7 @@ func TestMutationsAreCleanedAndAudited(t *testing.T) {
 		"file.extract Survival: /pack.zip -> /",
 	}
 	for i, e := range audit.events {
-		if got := e.Action + " " + e.Target; got != want[i] || !e.Success || e.UserID != "U1" || e.IP != "100.64.0.1" {
+		if got := e.Action + " " + e.Target; got != want[i] || !e.Success || e.UserID != "U1" || e.IP != "100.64.0.1" || e.ServerID != sid {
 			t.Errorf("audit %d = %+v, want %s", i, e, want[i])
 		}
 	}

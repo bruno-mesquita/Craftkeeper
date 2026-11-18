@@ -317,30 +317,45 @@ func (s *Service) refresh(ctx context.Context, f *feed) {
 	}
 }
 
-// SendCommand writes one command to a running server's console and audits it.
+// SendCommand writes one command typed by a user to a running server's console and audits it.
 func (s *Service) SendCommand(ctx context.Context, serverID, command string, actor servers.Actor) error {
+	attempted, err := s.send(ctx, serverID, command)
+	if attempted {
+		_ = s.audit.Record(context.WithoutCancel(ctx), domain.AuditEvent{
+			CreatedAt: s.now().UTC(), UserID: actor.UserID, ServerID: serverID, Action: domain.AuditConsoleCommand,
+			Target: truncate(command, auditCommandMax), IP: actor.IP, Success: err == nil,
+		})
+	}
+	return err
+}
+
+// Send writes a command the panel issues on its own (backups, player lists) to a running
+// server's console. It is not audited: the caller audits the action that needed it.
+func (s *Service) Send(ctx context.Context, serverID, command string) error {
+	_, err := s.send(ctx, serverID, command)
+	return err
+}
+
+// send validates the command and the server state, then writes it. attempted reports
+// whether the write was tried (so its outcome is worth auditing).
+func (s *Service) send(ctx context.Context, serverID, command string) (attempted bool, err error) {
 	if err := domain.ValidateConsoleCommand(command); err != nil {
-		return err
+		return false, err
 	}
 	view, err := s.servers.Get(ctx, serverID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	switch view.Status {
 	case domain.StatusRunning, domain.StatusStarting:
 	case domain.StatusUnknown:
-		return domain.ErrDockerUnavailable
+		return false, domain.ErrDockerUnavailable
 	case domain.StatusMissing:
-		return domain.ErrContainerMissing
+		return false, domain.ErrContainerMissing
 	default:
-		return domain.ErrServerNotRunning
+		return false, domain.ErrServerNotRunning
 	}
-	err = s.runtime.SendInput(ctx, view.ContainerID, view.ID, command)
-	_ = s.audit.Record(context.WithoutCancel(ctx), domain.AuditEvent{
-		CreatedAt: s.now().UTC(), UserID: actor.UserID, Action: domain.AuditConsoleCommand,
-		Target: view.Name + ": " + truncate(command, auditCommandMax), IP: actor.IP, Success: err == nil,
-	})
-	return err
+	return true, s.runtime.SendInput(ctx, view.ContainerID, view.ID, command)
 }
 
 // Close stops every feed and waits for their goroutines. Later subscriptions fail.

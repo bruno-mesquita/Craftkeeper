@@ -84,6 +84,9 @@ Formato: decisão — motivo — consequência.
 - **D54 · Crash loop por `RestartCount`, gravado no banco** (escolhas do usuário, 2026-11-18) — o `unless-stopped` deixava um servidor com mod quebrado reiniciando para sempre (Fase 7). — `servers.Service.Run` segue um 2º stream de Docker events; em cada `start` faz `inspect` e conta aumentos do `RestartCount` (o Docker só o incrementa em restarts da política). 3 em 10 min (constantes) → `MarkCrashed` (migration `0005`: `crashed_at`, `crash_restarts`) → audit `server.crash_loop` sem usuário → `Stop` em goroutine do `wg`. Status `crashed` é derivado (container parado + registro; D22 vale para o status), age como `stopped` em todo lugar; Start/Restart pelo painel limpam o registro. `Update` do repo não toca as colunas (só `MarkCrashed`/`ClearCrash`). UI: badge, aviso e dialog com o crash report mais novo via API de arquivos.
 - **D55 · HTTPS por `tailscale serve` + `SECURE_COOKIE`** (escolha do usuário, 2026-11-18) — o painel não termina TLS; o Tailscale renova o certificado. Produção escuta só em `127.0.0.1:8090` (sem HTTP paralelo pelo IP do Tailscale). Cookie `Secure` = `r.TLS != nil || SecureCookie`; cabeçalhos de proxy nunca são confiáveis, então atrás do serve todo cliente aparece como `127.0.0.1` (audit e limite de login por IP — aceito, um admin).
 - **D56 · Variáveis de ambiente sem prefixo** (pedido do usuário, 2026-11-18) — `LISTEN`, `DATA_DIR`, `DOCKER_SOCKET`, `LOG_LEVEL`, `GAME_PORTS`, `SECURE_COOKIE` (eram `MESQUITA_*`). — Em produção vêm só do `EnvironmentFile` do systemd, isolado; no `make run`/shell, uma variável genérica herdada (ex.: `LOG_LEVEL` de outra ferramenta) passa a valer para o painel.
+- **D57 · `audit_log.server_id`** (Fase 9, 2026-11-18) — o target usava o nome (muda, pode conter `": "`). — Migration `0006_audit_server` (coluna + índice `(server_id, id)`, sem FK: histórico de servidor apagado fica; sem backfill, eventos antigos só na página global). Leitura com `LEFT JOIN users`/`servers` (username, nome atual ou nulo). `GET /api/v1/audit` com filtros `server_id`/`action`/`failed`/`before`/`limit` (keyset, ≤ 200); `application/activity` valida. `Recent` removido (dashboard usa `List`).
+- **D58 · `server.console_command` com target = só o comando; comandos do painel não são auditados como console** — o ↑ não pode trazer `save-off` de volta e cada intenção = uma linha no audit. — `console.Service.Send` (sem audit) para backups/players; `SendCommand` (auditado) só para o WS. Histórico ↑/↓ = `GET /audit?server_id&action=server.console_command&limit=200` (sucesso + com usuário, dedup, ≤ 50).
+- **D59 · Logs antigos lidos no navegador** (mesmo raciocínio da D49/D52) — lista `logs/` e baixa via API de arquivos; `.gz` por `DecompressionStream`, streaming, mantém as últimas 20 000 linhas e para em 64 Mi caracteres. Lista relida a cada mudança de status (rotação no start). Busca = filtro case-insensitive por substring (live e arquivo).
 - **D10 · systemd com usuário dedicado `mesquita-panel`** — princípio do menor privilégio. — Precisa estar no grupo `docker` (root-equivalente) a partir da Fase 3; criação do usuário e grupo exige autorização no deploy.
 
 ---
@@ -114,7 +117,8 @@ Formato: decisão — motivo — consequência.
 | 6 | Backups | ✅ implementada, testada e verificada com servidor real (2026-11-17) | ver Fase 6 abaixo |
 | 7 | Game installers (Vanilla, Fabric, Forge, NeoForge; Paper/Purpur fora por escolha do usuário) | ✅ implementada, testada e verificada com servidor real (2026-11-17) | ver Fase 7 abaixo |
 | 8 | Pronto para produção (crash loop, HTTPS, deploy) | 🚧 crash loop testado e verificado com servidor real; falta deploy + HTTPS (2026-11-18) | ver Fase 8 abaixo |
-| 9–15 | Roadmap pós-Fase 7 (substituir o Crafty + features) | 📋 planejadas (2026-11-18) | ver "Roadmap pós-Fase 7" abaixo |
+| 9 | Console e eventos (histórico, busca, logs antigos, Activity) | ✅ implementada, testada e verificada (2026-11-18) | ver Fase 9 abaixo |
+| 10–14 | Roadmap pós-Fase 7 (features) | 📋 planejadas (2026-11-18) | ver "Roadmap pós-Fase 7" abaixo |
 
 Legenda de detalhe por feature (preencher ao implementar): **implementado** / **testado** / **planejado**.
 
@@ -325,17 +329,18 @@ Plano: `~/.claude/plans/preciso-agora-que-tudo-cuddly-widget.md`.
 
 Plano: `~/.claude/plans/vamos-fazer-um-novo-ticklish-quail.md`. Objetivo: **substituir o Crafty**,
 depois features. Multi-usuário fora por ora. Cada fase ganha plan mode próprio ao começar.
+**Importar servidores do Crafty foi descartado** pelo usuário (2026-11-18); as fases seguintes
+subiram um número.
 
 | Fase | Escopo | Status | Autorização |
 |---|---|---|---|
 | 8 | 🚧 Produção: detecção de crash/restart loop (Docker events, status `crashed` derivado, último `crash-reports/`); validar Players e modpack com MC real; deploy systemd (D10) + TLS `tailscale serve` | planejada | sudo, grupo docker, systemd |
-| 9 | Importar servidores do Crafty: cópia read-only da origem, detectar versão/loader, criar container; virada manual por servidor (porta: decidir) | planejada | leitura de `/home/bruno-mesquita/docker/` |
-| 10 | Console e eventos: histórico de comandos, busca, `logs/*.log.gz`; "Recent events" + página de audit log | planejada | — |
-| 11 | Tarefas agendadas (restart/comando/anúncio; generaliza D42) + webhook Discord (crash, start/stop, backup falho, join/leave via SLP) | planejada | — |
-| 12 | Trocar versão/loader com backup automático; mundos (reset, seed, import/export) + `ops.json` | planejada | — |
-| 13 | Mods via Modrinth (busca por loader/MC, SHA-512, updates, dependências) | planejada | — |
-| 14 | Histórico de métricas (revisa D18; 1 min, 24–48 h, SVG) + página global Backups | planejada | — |
-| 15 | Clonar servidor / templates + status público (ponto de exposição a decidir) | planejada | possivelmente exposição pública |
+| 9 | Console e eventos: histórico de comandos, busca, `logs/*.log.gz`; página Activity + aba por servidor | ✅ concluída | — |
+| 10 | Tarefas agendadas (restart/comando/anúncio; generaliza D42) + webhook Discord (crash, start/stop, backup falho, join/leave via SLP) | planejada | — |
+| 11 | Trocar versão/loader com backup automático; mundos (reset, seed, import/export) + `ops.json` | planejada | — |
+| 12 | Mods via Modrinth (busca por loader/MC, SHA-512, updates, dependências) | planejada | — |
+| 13 | Histórico de métricas (revisa D18; 1 min, 24–48 h, SVG) + página global Backups | planejada | — |
+| 14 | Clonar servidor / templates + status público (ponto de exposição a decidir) | planejada | possivelmente exposição pública |
 
 ## Fase 8 — estado (2026-11-18)
 
@@ -403,3 +408,21 @@ Plano: `~/.claude/plans/veja-um-jeito-se-glimmering-tarjan.md`.
   cada 10 s só com servidor rodando, aba visível e documento visível. `make css` regenerado.
 - **Testado:** `minecraft/ping_test.go` (servidor SLP falso), contrato HTTP `TestOnlinePlayers`.
   `sudo make check` passou (2026-11-18). Verificado pelo usuário com servidor real: a listagem funcionou.
+
+## Fase 9 — Console e eventos (2026-11-18)
+
+Plano: `~/.claude/plans/planeje-a-fase-9-noble-kernighan.md`. Decisões D57–D59. Sem retenção do
+audit log por ora (escolha do usuário).
+- **Implementado:** migration `0006_audit_server`; `domain` (`AuditEvent.ServerID/Username/
+  ServerName`, `AuditActions`, `AuditFilter`); `sqlite.AuditLog.List`; `application/activity`;
+  `ServerID` em todo audit de servers/files/backups/players/console; `console.Send`; rota
+  `GET /api/v1/audit` + campos novos em `recent_events`; frontend `activity.js` (tabela, filtros,
+  "Load more"), página `#/activity` (menu "Activity"), aba "Activity" no servidor, Overview com
+  rótulos e "View all"; console com histórico persistente, busca e seletor de `logs/`
+  (`log-viewer.js`); `docs/API.md`, `docs/WEBSOCKET.md`.
+- **Testes escritos:** `sqlite/audit_test.go` (filtros, paginação, joins, migration sobre banco
+  antigo), `activity/service_test.go`, `http/audit_test.go` (contrato), console (`Send` sem
+  audit, target = comando), asserções de `ServerID` em files/backups/crashguard. JS: `node --check`.
+- `make css` regenerado.
+- **Testado:** `sudo make check` passou (2026-11-18; gofmt, vet, testes, build; binário 13,8 MB).
+- **Verificado de verdade (usuário, 2026-11-18):** roteiro manual do plano feito no navegador.

@@ -2,6 +2,7 @@
 import { api } from '../api.js';
 import { confirmDialog } from '../dialog.js';
 import { h, toast } from '../dom.js';
+import { eventHeaders, eventRow } from '../activity.js';
 import { bytes, dateTime, percent, rate } from '../format.js';
 import { icons } from '../icons.js';
 
@@ -57,10 +58,12 @@ export function mount(root) {
           h('tr', null, ['Server', 'State', 'CPU', 'Memory', 'Network', ''].map((c) => h('th', { class: 'pb-2 font-medium', scope: 'col' }, c)))),
         containers)),
     h('section', { class: 'card mt-6 overflow-x-auto' },
-      h('h2', { class: 'mb-3 font-semibold' }, 'Recent events'),
+      h('div', { class: 'mb-3 flex items-center justify-between gap-3' },
+        h('h2', { class: 'font-semibold' }, 'Recent events'),
+        h('a', { class: 'text-sm text-muted underline-offset-2 hover:text-foreground hover:underline', href: '#/activity' }, 'View all')),
       h('table', { class: 'w-full text-left' },
         h('thead', { class: 'text-xs text-muted' },
-          h('tr', null, ['Time', 'Action', 'Target', 'IP', 'Result'].map((c) => h('th', { class: 'pb-2 font-medium', scope: 'col' }, c)))),
+          h('tr', null, eventHeaders().map((c) => h('th', { class: 'pb-2 font-medium', scope: 'col' }, c)))),
         events)));
 
   async function refreshStats() {
@@ -135,13 +138,8 @@ export function mount(root) {
       docker.className = `badge ${d.docker.reachable ? 'text-success' : 'text-warning'}`;
       serverCounts.textContent = `Servers: ${d.servers.running} running · ${d.servers.stopped} stopped`;
       events.replaceChildren(...(d.recent_events.length
-        ? d.recent_events.map((e) => h('tr', { class: 'border-t border-border' },
-          h('td', { class: 'py-2 pr-4 whitespace-nowrap tabular-nums' }, dateTime(e.created_at)),
-          h('td', { class: 'py-2 pr-4 font-mono text-xs' }, e.action),
-          h('td', { class: 'py-2 pr-4' }, e.target),
-          h('td', { class: 'py-2 pr-4 font-mono text-xs text-muted' }, e.ip),
-          h('td', { class: `py-2 ${e.success ? 'text-success' : 'text-danger'}` }, e.success ? 'OK' : 'Failed')))
-        : [h('tr', null, h('td', { class: 'py-2 text-muted', colspan: '5' }, 'No events yet.'))]));
+        ? d.recent_events.map((e) => eventRow(e))
+        : [h('tr', null, h('td', { class: 'py-2 text-muted', colspan: String(eventHeaders().length) }, 'No events yet.'))]));
     } catch {
       docker.textContent = 'Docker: unknown';
     }

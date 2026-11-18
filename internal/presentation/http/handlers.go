@@ -2,8 +2,10 @@ package httpapi
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/activity"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/auth"
 	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
 )
@@ -215,12 +217,77 @@ func (a *API) containerStats(w http.ResponseWriter, r *http.Request) {
 }
 
 type auditEventDTO struct {
-	ID        int64  `json:"id"`
-	CreatedAt string `json:"created_at"`
-	Action    string `json:"action"`
-	Target    string `json:"target"`
-	IP        string `json:"ip"`
-	Success   bool   `json:"success"`
+	ID         int64   `json:"id"`
+	CreatedAt  string  `json:"created_at"`
+	Action     string  `json:"action"`
+	Target     string  `json:"target"`
+	IP         string  `json:"ip"`
+	Success    bool    `json:"success"`
+	User       *string `json:"user"`        // username; null for the panel itself or an unknown user
+	ServerID   *string `json:"server_id"`   // null when the event is not about one server
+	ServerName *string `json:"server_name"` // current name; null when the server no longer exists
+}
+
+func auditEventsDTO(events []domain.AuditEvent) []auditEventDTO {
+	optional := func(s string) *string {
+		if s == "" {
+			return nil
+		}
+		return &s
+	}
+	list := make([]auditEventDTO, 0, len(events))
+	for _, e := range events {
+		list = append(list, auditEventDTO{ID: e.ID, CreatedAt: rfc3339(e.CreatedAt), Action: e.Action, Target: e.Target,
+			IP: e.IP, Success: e.Success, User: optional(e.Username), ServerID: optional(e.ServerID),
+			ServerName: optional(e.ServerName)})
+	}
+	return list
+}
+
+// listAudit serves GET /api/v1/audit?server_id=&action=&failed=true&before=&limit=.
+func (a *API) listAudit(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	f := domain.AuditFilter{ServerID: q.Get("server_id"), Action: q.Get("action")}
+	before, err := positiveParam(q.Get("before"), "before")
+	if err == nil {
+		var limit int64
+		limit, err = positiveParam(q.Get("limit"), "limit")
+		f.BeforeID, f.Limit = before, int(min(limit, activity.MaxLimit+1)) // the service rejects > max
+	}
+	if err != nil {
+		writeDomainError(w, a.log, err)
+		return
+	}
+	switch q.Get("failed") {
+	case "", "false":
+	case "true":
+		f.FailedOnly = true
+	default:
+		writeDomainError(w, a.log, &domain.ValidationError{Field: "failed", Message: "must be true or false"})
+		return
+	}
+	page, err := a.activity.List(r.Context(), f)
+	if err != nil {
+		writeDomainError(w, a.log, err)
+		return
+	}
+	var next *int64
+	if page.NextBefore > 0 {
+		next = &page.NextBefore
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"events": auditEventsDTO(page.Events), "next_before": next})
+}
+
+// positiveParam parses an optional positive integer query parameter; empty is 0.
+func positiveParam(v, name string) (int64, error) {
+	if v == "" {
+		return 0, nil
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n <= 0 {
+		return 0, &domain.ValidationError{Field: name, Message: "must be a positive integer"}
+	}
+	return n, nil
 }
 
 func (a *API) dashboardOverview(w http.ResponseWriter, r *http.Request) {
@@ -229,10 +296,7 @@ func (a *API) dashboardOverview(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, a.log, err)
 		return
 	}
-	events := make([]auditEventDTO, 0, len(o.RecentEvents))
-	for _, e := range o.RecentEvents {
-		events = append(events, auditEventDTO{ID: e.ID, CreatedAt: rfc3339(e.CreatedAt), Action: e.Action, Target: e.Target, IP: e.IP, Success: e.Success})
-	}
+	events := auditEventsDTO(o.RecentEvents)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"docker":        map[string]bool{"reachable": o.DockerReachable},
 		"servers":       map[string]int{"total": o.Servers.Total, "running": o.Servers.Running, "stopped": o.Servers.Stopped},

@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/activity"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/auth"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/backups"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/console"
@@ -159,7 +160,7 @@ func run() error {
 		backupsSvc.Close()
 	}()
 
-	handler := httpapi.New(authSvc, monitoringSvc, dashboardSvc, serversSvc, installersSvc, filesSvc, backupsSvc, playersSvc, hub, web.FS, cfg.SecureCookie, log).Handler()
+	handler := httpapi.New(authSvc, monitoringSvc, dashboardSvc, activity.NewService(auditLog), serversSvc, installersSvc, filesSvc, backupsSvc, playersSvc, hub, web.FS, cfg.SecureCookie, log).Handler()
 	return serve(ctx, log, cfg.Listen, handler, hub)
 }
 

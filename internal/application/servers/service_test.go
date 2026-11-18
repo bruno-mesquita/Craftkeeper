@@ -384,7 +384,7 @@ func TestCreateFailureKeepsRecord(t *testing.T) {
 		if list, _ := e.svc.List(ctx); len(list) != 1 || list[0].Status != domain.StatusCreateFailed {
 			t.Fatalf("%s: list = %+v", op, list)
 		}
-		events, _ := e.auditDB.Recent(ctx, 1)
+		events, _ := e.auditDB.List(ctx, domain.AuditFilter{Limit: 1})
 		if len(events) != 1 || events[0].Action != domain.AuditServerCreate || events[0].Success {
 			t.Fatalf("%s: audit = %+v", op, events)
 		}

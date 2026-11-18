@@ -216,7 +216,7 @@ func (f *fakeConsole) Subscribe(_ context.Context, sid string, sink console.Sink
 	}, nil
 }
 
-func (f *fakeConsole) SendCommand(_ context.Context, sid, cmd string, _ servers.Actor) error {
+func (f *fakeConsole) Send(_ context.Context, sid, cmd string) error {
 	f.env.record("console " + cmd)
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -277,7 +277,7 @@ func TestOfflineBackup(t *testing.T) {
 	if a := e.audit.actions(); a != "backup.create" {
 		t.Fatalf("audit = %s", a)
 	}
-	if e.audit.events[0].Target != "Survival: "+b.ID || e.audit.events[0].UserID != "U" {
+	if ev := e.audit.events[0]; ev.Target != "Survival: "+b.ID || ev.UserID != "U" || ev.ServerID != b.ServerID {
 		t.Fatalf("audit event = %+v", e.audit.events[0])
 	}
 }

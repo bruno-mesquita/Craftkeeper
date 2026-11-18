@@ -140,7 +140,7 @@ func (s *Service) provision(x domain.Server, start bool, actor Actor) {
 	s.provisionLock.Lock() // one image pull at a time
 	err := s.build(s.ctx, &x)
 	s.provisionLock.Unlock()
-	s.record(s.ctx, actor, domain.AuditServerCreate, x.Name, err == nil)
+	s.record(s.ctx, actor, domain.AuditServerCreate, x.ID, x.Name, err == nil)
 
 	s.jobsMu.Lock()
 	if err != nil {
@@ -154,7 +154,7 @@ func (s *Service) provision(x domain.Server, start bool, actor Actor) {
 	}
 	// A failed start leaves the server stopped, which the list shows.
 	err = s.runtime.Start(s.ctx, x.ContainerID, x.ID)
-	s.record(s.ctx, actor, domain.AuditServerStart, x.Name, err == nil)
+	s.record(s.ctx, actor, domain.AuditServerStart, x.ID, x.Name, err == nil)
 }
 
 // build pulls the image if needed and creates the server's directory and (stopped)
@@ -417,7 +417,7 @@ func (s *Service) act(ctx context.Context, id string, actor Actor, action string
 		return View{}, err
 	}
 	err = op(ctx, x.ContainerID, x.ID)
-	s.record(ctx, actor, action, x.Name, err == nil)
+	s.record(ctx, actor, action, x.ID, x.Name, err == nil)
 	if err != nil {
 		return View{}, err
 	}
@@ -477,11 +477,11 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput, actor A
 	if limitsChanged {
 		if err := s.runtime.UpdateLimits(ctx, x.ContainerID, x.ID, x.MemoryMB, x.CPUMillicores); err != nil {
 			_ = s.repo.Update(context.WithoutCancel(ctx), old)
-			s.record(ctx, actor, domain.AuditServerUpdate, old.Name, false)
+			s.record(ctx, actor, domain.AuditServerUpdate, old.ID, old.Name, false)
 			return View{}, err
 		}
 	}
-	s.record(ctx, actor, domain.AuditServerUpdate, x.Name, true)
+	s.record(ctx, actor, domain.AuditServerUpdate, x.ID, x.Name, true)
 	return s.view(ctx, x)
 }
 
@@ -514,7 +514,7 @@ func (s *Service) Delete(ctx context.Context, id string, deleteFiles bool, actor
 		s.jobsMu.Unlock()
 		s.forgetRestarts(x.ID)
 	}
-	s.record(ctx, actor, domain.AuditServerDelete, x.Name, err == nil)
+	s.record(ctx, actor, domain.AuditServerDelete, x.ID, x.Name, err == nil)
 	return err
 }
 
@@ -565,12 +565,14 @@ func (s *Service) DeleteOrphanContainer(ctx context.Context, containerID string,
 	if errors.Is(err, domain.ErrContainerMissing) {
 		err = nil
 	}
-	s.record(ctx, actor, domain.AuditContainerDelete, found.ID, err == nil)
+	s.record(ctx, actor, domain.AuditContainerDelete, "", found.ID, err == nil)
 	return err
 }
 
-func (s *Service) record(ctx context.Context, actor Actor, action, target string, success bool) {
+// record audits an action; serverID is empty when it is not about a registered server.
+func (s *Service) record(ctx context.Context, actor Actor, action, serverID, target string, success bool) {
 	_ = s.audit.Record(context.WithoutCancel(ctx), domain.AuditEvent{
-		CreatedAt: s.now().UTC(), UserID: actor.UserID, Action: action, Target: target, IP: actor.IP, Success: success,
+		CreatedAt: s.now().UTC(), UserID: actor.UserID, ServerID: serverID, Action: action, Target: target,
+		IP: actor.IP, Success: success,
 	})
 }

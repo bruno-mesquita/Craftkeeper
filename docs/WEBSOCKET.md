@@ -49,7 +49,8 @@ Unknown fields are ignored. Times are RFC 3339 UTC with up to nanosecond precisi
 - `console.command` does not require a subscription. `command`: 1–1024 bytes of UTF-8,
   without control characters (no line breaks): it is written as one line to the game's
   console. The server must be `running` or `starting`. Every command is recorded in the audit
-  log (`server.console_command`, target `<server name>: <command, truncated to 200 bytes>`).
+  log (`server.console_command`, `server_id` of the server, target = the command truncated to
+  200 bytes).
   `ack` means the command was delivered to the game, not that it succeeded; its output appears
   as `console.output`.
 

@@ -211,7 +211,7 @@ func (s *Service) run(b domain.Backup, serverName string, actor servers.Actor) {
 	defer s.wg.Done()
 	defer s.release(b.ServerID)
 
-	size, err := s.write(s.ctx, b, actor)
+	size, err := s.write(s.ctx, b)
 	ctx := context.WithoutCancel(s.ctx)
 	b.CompletedAt = s.now().UTC().Truncate(time.Second)
 	if err == nil {
@@ -230,7 +230,7 @@ func (s *Service) run(b domain.Backup, serverName string, actor servers.Actor) {
 		}
 	}
 	ok := err == nil && ferr == nil
-	s.record(ctx, actor, domain.AuditBackupCreate, serverName+": "+b.ID, ok)
+	s.record(ctx, actor, domain.AuditBackupCreate, b.ServerID, serverName+": "+b.ID, ok)
 	if ok && b.Kind == domain.BackupScheduled {
 		s.prune(ctx, b.ServerID, serverName)
 	}
@@ -238,7 +238,7 @@ func (s *Service) run(b domain.Backup, serverName string, actor servers.Actor) {
 
 // write waits for the archive slot, then archives the server: online (saving paused) if it
 // runs, directly if it is stopped.
-func (s *Service) write(ctx context.Context, b domain.Backup, actor servers.Actor) (int64, error) {
+func (s *Service) write(ctx context.Context, b domain.Backup) (int64, error) {
 	select {
 	case s.slot <- struct{}{}:
 		defer func() { <-s.slot }()
@@ -258,7 +258,7 @@ func (s *Service) write(ctx context.Context, b domain.Backup, actor servers.Acto
 		return 0, err
 	}
 	if online {
-		return s.writeOnline(ctx, b, actor)
+		return s.writeOnline(ctx, b)
 	}
 	size, err := s.store.Write(ctx, b.ServerID, b.ID)
 	if err != nil {
@@ -278,7 +278,7 @@ func (s *Service) write(ctx context.Context, b domain.Backup, actor servers.Acto
 // writeOnline archives a running server with the game's saving turned off, after making it
 // write everything to disk ("save-all flush" and its "Saved the game" confirmation). Saving
 // is always turned back on. Players are told in the chat when it starts and how it ended.
-func (s *Service) writeOnline(ctx context.Context, b domain.Backup, actor servers.Actor) (_ int64, err error) {
+func (s *Service) writeOnline(ctx context.Context, b domain.Backup) (_ int64, err error) {
 	saved := make(chan struct{})
 	var once sync.Once
 	var since atomic.Int64 // when "save-all flush" was sent (Unix ns); older lines are history
@@ -297,7 +297,7 @@ func (s *Service) writeOnline(ctx context.Context, b domain.Backup, actor server
 
 	// A chat message is a courtesy: failing to send one never fails the backup.
 	chat := func(ctx context.Context, msg string) {
-		if err := s.console.SendCommand(ctx, b.ServerID, tellraw(msg), actor); err != nil {
+		if err := s.console.Send(ctx, b.ServerID, tellraw(msg)); err != nil {
 			s.log.Debug("backup: chat message not sent", "server_id", b.ServerID, "err", err)
 		}
 	}
@@ -307,7 +307,7 @@ func (s *Service) writeOnline(ctx context.Context, b domain.Backup, actor server
 	defer func() {
 		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), saveOnTimeout)
 		defer cancel()
-		if err := s.console.SendCommand(sctx, b.ServerID, "save-on", actor); err != nil &&
+		if err := s.console.Send(sctx, b.ServerID, "save-on"); err != nil &&
 			!errors.Is(err, domain.ErrServerNotRunning) {
 			s.log.Error("backup: saving could not be turned back on; run save-on in the console",
 				"server_id", b.ServerID, "err", err)
@@ -318,11 +318,11 @@ func (s *Service) writeOnline(ctx context.Context, b domain.Backup, actor server
 			chat(sctx, chatFailed)
 		}
 	}()
-	if err := s.console.SendCommand(ctx, b.ServerID, "save-off", actor); err != nil {
+	if err := s.console.Send(ctx, b.ServerID, "save-off"); err != nil {
 		return 0, err
 	}
 	since.Store(time.Now().UnixNano())
-	if err := s.console.SendCommand(ctx, b.ServerID, "save-all flush", actor); err != nil {
+	if err := s.console.Send(ctx, b.ServerID, "save-all flush"); err != nil {
 		return 0, err
 	}
 	timer := time.NewTimer(s.saveTimeout)
@@ -374,7 +374,7 @@ func (s *Service) prune(ctx context.Context, serverID, serverName string) {
 		if err != nil {
 			s.log.Error("old backup not removed", "backup_id", b.ID, "err", err)
 		}
-		s.record(ctx, servers.Actor{}, domain.AuditBackupDelete, serverName+": "+b.ID, err == nil)
+		s.record(ctx, servers.Actor{}, domain.AuditBackupDelete, serverID, serverName+": "+b.ID, err == nil)
 	}
 }
 
@@ -401,7 +401,7 @@ func (s *Service) Restore(ctx context.Context, serverID, backupID string, actor 
 	}
 	defer s.release(serverID)
 	err = s.restore(ctx, b)
-	s.record(ctx, actor, domain.AuditBackupRestore, view.Name+": "+b.ID, err == nil)
+	s.record(ctx, actor, domain.AuditBackupRestore, view.ID, view.Name+": "+b.ID, err == nil)
 	return err
 }
 
@@ -462,7 +462,7 @@ func (s *Service) Delete(ctx context.Context, serverID, backupID string, actor s
 	if err == nil {
 		err = s.repo.Delete(ctx, backupID)
 	}
-	s.record(ctx, actor, domain.AuditBackupDelete, view.Name+": "+b.ID, err == nil)
+	s.record(ctx, actor, domain.AuditBackupDelete, view.ID, view.Name+": "+b.ID, err == nil)
 	return err
 }
 
@@ -537,7 +537,7 @@ func (s *Service) UpdateSchedule(ctx context.Context, serverID string, intervalH
 		sc.NextRunAt = s.now().UTC().Truncate(time.Second).Add(time.Duration(intervalHours) * time.Hour)
 	}
 	err = s.repo.PutSchedule(ctx, sc)
-	s.record(ctx, actor, domain.AuditBackupSchedule, view.Name, err == nil)
+	s.record(ctx, actor, domain.AuditBackupSchedule, view.ID, view.Name, err == nil)
 	if err != nil {
 		return domain.BackupSchedule{}, err
 	}
@@ -600,8 +600,9 @@ func (s *Service) storeRefusal(ctx context.Context, serverID string, cause error
 	}
 }
 
-func (s *Service) record(ctx context.Context, actor servers.Actor, action, target string, success bool) {
+func (s *Service) record(ctx context.Context, actor servers.Actor, action, serverID, target string, success bool) {
 	_ = s.audit.Record(context.WithoutCancel(ctx), domain.AuditEvent{
-		CreatedAt: s.now().UTC(), UserID: actor.UserID, Action: action, Target: target, IP: actor.IP, Success: success,
+		CreatedAt: s.now().UTC(), UserID: actor.UserID, ServerID: serverID, Action: action, Target: target,
+		IP: actor.IP, Success: success,
 	})
 }

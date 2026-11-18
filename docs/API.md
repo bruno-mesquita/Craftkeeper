@@ -137,17 +137,45 @@ registered server is refused (`409 container_not_managed`; use `DELETE /servers/
   "docker": { "reachable": true },
   "servers": { "total": 2, "running": 1, "stopped": 1 },
   "recent_events": [
-    { "id": 2, "created_at": "...", "action": "auth.login", "target": "admin", "ip": "127.0.0.1", "success": true }
+    { "id": 2, "created_at": "...", "action": "auth.login", "target": "admin", "ip": "127.0.0.1", "success": true,
+      "user": "admin", "server_id": null, "server_name": null }
   ]
 }
 ```
+`recent_events` holds the 10 newest audit events (**AuditEvent**, see `GET /audit`).
 `servers.running` counts running, starting and restarting servers; `servers.stopped` counts
 stopped and crashed ones; servers whose container
 is missing, or whose status is unknown, are only in `total`.
+
+### `GET /audit?server_id=&action=&failed=true&before=&limit=` — auth
+The audit log, newest first. All parameters are optional: `server_id` (events about that
+server, including a deleted one), `action` (one of the actions below), `failed=true|false`
+(only unsuccessful events), `before` (only events with a smaller `id`; pass the previous
+page's `next_before`) and `limit` (1–200, default 50).
+```json
+{
+  "events": [
+    { "id": 41, "created_at": "2026-11-18T12:00:00Z", "action": "server.console_command", "target": "list",
+      "ip": "127.0.0.1", "success": true, "user": "admin", "server_id": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+      "server_name": "Survival" }
+  ],
+  "next_before": 41
+}
+```
+**AuditEvent:** `user` is the username, `null` for the panel itself (crash loop, scheduled
+backups) or an unknown user (failed login). `server_id` is `null` for events not about one
+server and for events recorded before migration `0006_audit_server` (their target names the
+server). `server_name` is the server's **current** name, `null` once it is deleted.
+`next_before` is `null` on the last page. Errors: `422 validation_failed` (`field`: `limit`,
+`before`, `action`, `server_id` or `failed`).
+
 Audit actions: `auth.setup`, `auth.login`, `auth.logout`, `auth.password_change`,
 `server.create`, `server.update`, `server.start`, `server.stop`, `server.restart`,
 `server.kill`, `server.delete` (target: server name), `server.crash_loop` (no user; see
-Servers).
+Servers), `server.console_command` (target: the command typed in the console, at most 200
+bytes; commands the panel sends itself for backups and player lists are not recorded as
+console commands), `container.delete`, `modpack.*`, `file.*`, `backup.*`, `whitelist.*`,
+`player.*`, `ip.*` (see their sections).
 
 ## Servers
 
@@ -374,7 +402,8 @@ live on the same disk as the server: download them to keep a copy elsewhere.
   paused and `save-on` is always sent afterwards. Players are told in the chat (gray
   `tellraw @a`): `[Backup] Starting server backup...`, then `[Backup] Backup complete.` or
   `[Backup] Backup failed; automatic saving is back on.`; a message that cannot be sent never
-  fails the backup. These commands appear in the audit log as `server.console_command`.
+  fails the backup. These commands are covered by the `backup.create` audit event, not
+  recorded as console commands.
 - **Stopped server** (or its container is missing): archived directly. If the server is
   started during the backup, the backup fails (`server_busy`).
 - A starting or restarting server answers `409 server_busy`; without Docker, `503`.
@@ -458,7 +487,7 @@ Whitelist and ban lists of a Minecraft server. The lists are read from the game'
 - **Running (or starting) server:** every change is sent to the game console (`whitelist
   on|off|add|remove`, `ban`, `pardon`, `ban-ip`, `pardon-ip`), because the running game owns
   those files and rewrites them. The game resolves UUIDs; it may write its files a moment
-  after the `204`. The commands also appear as `server.console_command` in the audit log.
+  after the `204`. Only the player action is audited (e.g. `whitelist.add`), not the command.
 - **Stopped server (or missing container):** the files are edited directly. The whitelist
   switch sets `white-list` and `enforce-whitelist` in `server.properties`, keeping its other
   lines. Adding a player or a player ban needs a UUID: offline-mode servers

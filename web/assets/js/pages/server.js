@@ -1,13 +1,16 @@
 // Server page: header with live status and lifecycle actions, then tabs: the live console
-// (WebSocket channel server:<id>, docs/WEBSOCKET.md), the file manager, backups, players, the
-// server list icon with the server.properties form, and the memory/CPU limits. Usage is polled over REST.
+// (WebSocket channel server:<id>, docs/WEBSOCKET.md) with old log files and search, the file
+// manager, backups, players, the server list icon with the server.properties form, the memory/CPU
+// limits and the server's activity. Usage is polled over REST.
 import { api, ApiError } from '../api.js';
 import { openDialog } from '../dialog.js';
 import { h, toast } from '../dom.js';
 import { bytes, percent } from '../format.js';
+import { mountActivity } from '../activity.js';
 import { mountBackupManager } from '../backup-manager.js';
 import { mountFileManager } from '../file-manager.js';
 import { mountIconManager, serverIcon } from '../icon-manager.js';
+import { filterLines, listLogs, matchesLine, readLog } from '../log-viewer.js';
 import { mountPlayerManager } from '../player-manager.js';
 import { mountPropertiesManager } from '../properties-manager.js';
 import { mountResourcesManager } from '../resources-manager.js';
@@ -15,7 +18,7 @@ import { ACTIONS, ACTIVE, STATUS, confirmAction, gameVersion, lifecycleActions, 
 import * as ws from '../ws.js';
 
 const MAX_LINES = 2000; // older lines are dropped from the page (the server keeps the log)
-const MAX_HISTORY = 50; // remembered commands for ↑/↓
+const MAX_HISTORY = 50; // remembered commands for ↑/↓ (loaded from the audit log)
 const USAGE_MS = 3000;
 const SERVER_ID = /^[A-Z2-7]{26}$/;
 const ACCEPTS_COMMANDS = new Set(['running', 'starting']);
@@ -66,9 +69,24 @@ export function mount(root, { param: id }) {
   const sendBtn = h('button', { class: 'btn btn-primary', type: 'submit' }, 'Send');
   const form = h('form', { class: 'mt-3 flex gap-2' }, input, sendBtn);
 
+  const logSelect = h('select', { class: 'input w-auto max-w-60', 'aria-label': 'Log shown' }, h('option', { value: '' }, 'Live console'));
+  const search = h('input', {
+    class: 'input w-auto min-w-0 flex-1 sm:max-w-64', type: 'search', autocomplete: 'off', spellcheck: 'false',
+    placeholder: 'Search', 'aria-label': 'Search the log',
+  });
+  const matchCount = h('span', { class: 'text-xs text-muted tabular-nums', 'aria-live': 'polite' });
+  const fileLog = h('div', {
+    class: 'h-[60vh] min-h-64 overflow-y-auto rounded-md border border-border bg-background p-3 font-mono text-xs leading-5 whitespace-pre-wrap break-words',
+    role: 'log', 'aria-label': 'Log file', 'aria-live': 'off', tabindex: '0', hidden: true,
+  });
+  const fileNote = h('p', { class: 'mt-3 text-xs text-muted', role: 'status', hidden: true });
+  let fileLoad = null; // AbortController of the log file being read
+
   const consolePanel = h('section', { class: 'card', id: 'panel-console', role: 'tabpanel', 'aria-labelledby': 'tab-console' },
-    h('div', { class: 'mb-3 flex items-center justify-end gap-3' }, conn),
+    h('div', { class: 'mb-3 flex flex-wrap items-center gap-3' }, logSelect, search, matchCount, h('span', { class: 'ml-auto' }, conn)),
     h('div', { class: 'relative' }, log, jump),
+    fileLog,
+    fileNote,
     form);
   const filesPanel = h('section', { class: 'card', id: 'panel-files', role: 'tabpanel', 'aria-labelledby': 'tab-files', hidden: true });
   let files = null; // file manager, mounted on first use
@@ -81,6 +99,8 @@ export function mount(root, { param: id }) {
   let icon = null; // server-icon.png, mounted with the properties form
   const resourcesPanel = h('section', { class: 'card', id: 'panel-resources', role: 'tabpanel', 'aria-labelledby': 'tab-resources', hidden: true });
   let resources = null; // memory/CPU limits form, mounted on first use
+  const activityPanel = h('section', { class: 'card', id: 'panel-activity', role: 'tabpanel', 'aria-labelledby': 'tab-activity', hidden: true });
+  let activity = null; // this server's audit events, mounted on first use
 
   const tabButtons = {
     console: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-console', 'aria-controls': 'panel-console' }, 'Console'),
@@ -89,8 +109,9 @@ export function mount(root, { param: id }) {
     players: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-players', 'aria-controls': 'panel-players' }, 'Players'),
     properties: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-properties', 'aria-controls': 'panel-properties' }, 'Properties'),
     resources: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-resources', 'aria-controls': 'panel-resources' }, 'Resources'),
+    activity: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-activity', 'aria-controls': 'panel-activity' }, 'Activity'),
   };
-  const panels = { console: consolePanel, files: filesPanel, backups: backupsPanel, players: playersPanel, properties: propertiesPanel, resources: resourcesPanel };
+  const panels = { console: consolePanel, files: filesPanel, backups: backupsPanel, players: playersPanel, properties: propertiesPanel, resources: resourcesPanel, activity: activityPanel };
 
   function showTab(name) {
     for (const [n, b] of Object.entries(tabButtons)) {
@@ -127,6 +148,10 @@ export function mount(root, { param: id }) {
       resources = mountResourcesManager(resourcesPanel, { id, onSaved: (view) => { server = view; renderHeader(); } });
       if (server) resources.setServer(server);
     }
+    if (name === 'activity') {
+      if (!activity) activity = mountActivity(activityPanel, { serverId: id });
+      else activity.refresh();
+    }
     if (name === 'backups') {
       if (!backups) {
         backups = mountBackupManager(backupsPanel, { id, onRestored: () => files?.refresh() });
@@ -138,7 +163,7 @@ export function mount(root, { param: id }) {
   }
   for (const [n, b] of Object.entries(tabButtons)) b.addEventListener('click', () => showTab(n));
   // Arrow keys move between tabs (WAI-ARIA tabs pattern).
-  const tablist = h('div', { class: 'mb-3 flex gap-1', role: 'tablist', 'aria-label': 'Server sections' }, ...Object.values(tabButtons));
+  const tablist = h('div', { class: 'mb-3 flex flex-wrap gap-1', role: 'tablist', 'aria-label': 'Server sections' }, ...Object.values(tabButtons));
   tablist.addEventListener('keydown', (e) => {
     if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
     const names = Object.keys(tabButtons);
@@ -165,7 +190,8 @@ export function mount(root, { param: id }) {
     backupsPanel,
     playersPanel,
     propertiesPanel,
-    resourcesPanel);
+    resourcesPanel,
+    activityPanel);
   showTab('console');
 
   // --- header -------------------------------------------------------------------------
@@ -227,6 +253,7 @@ export function mount(root, { param: id }) {
         playersPanel.hidden = true;
         propertiesPanel.hidden = true;
         resourcesPanel.hidden = true;
+        activityPanel.hidden = true;
         return;
       }
       notice.hidden = false;
@@ -282,10 +309,13 @@ export function mount(root, { param: id }) {
 
   function append(lines, replace) {
     const stick = replace || atBottom();
+    const q = search.value.trim().toLowerCase();
     const els = lines.map(lineEl);
+    for (const el of els) el.hidden = !matchesLine(el, q);
     if (replace) log.replaceChildren(...els);
     else log.append(...els);
     while (log.childElementCount > MAX_LINES) log.firstElementChild.remove();
+    if (q && !logSelect.value) scheduleMatches();
     if (stick) {
       log.scrollTop = log.scrollHeight;
       jump.hidden = true;
@@ -306,6 +336,7 @@ export function mount(root, { param: id }) {
         if (server && server.status !== msg.payload.status) {
           server = { ...server, status: msg.payload.status };
           renderHeader();
+          refreshLogList();
           if (server.status === 'crashed') load(); // fetch the crash record for the notice
         }
         break;
@@ -334,6 +365,105 @@ export function mount(root, { param: id }) {
     log.focus();
   });
 
+  // --- search and old log files ---------------------------------------------------------
+
+  const shownLog = () => (logSelect.value ? fileLog : log);
+
+  function renderMatches() {
+    const q = search.value.trim();
+    const n = filterLines(shownLog(), q);
+    matchCount.textContent = q ? `${n} ${n === 1 ? 'match' : 'matches'}` : '';
+  }
+
+  // Live lines can arrive fast: recount at most once per frame.
+  let matchFrame = 0;
+  function scheduleMatches() {
+    if (matchFrame) return;
+    matchFrame = requestAnimationFrame(() => {
+      matchFrame = 0;
+      renderMatches();
+    });
+  }
+
+  search.addEventListener('input', () => {
+    renderMatches();
+    const el = shownLog();
+    el.scrollTop = el.scrollHeight;
+  });
+  search.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !search.value) return;
+    e.preventDefault();
+    search.value = '';
+    renderMatches();
+  });
+
+  // The game rotates latest.log into a .log.gz when it starts: the list is read on load and
+  // again on every status change.
+  async function refreshLogList() {
+    try {
+      const files = await listLogs(id);
+      const current = logSelect.value;
+      logSelect.replaceChildren(h('option', { value: '' }, 'Live console'),
+        ...files.map((f) => h('option', { value: f.name }, f.name)));
+      logSelect.value = files.some((f) => f.name === current) ? current : '';
+    } catch {
+      // no logs/ folder yet (server never started) or files unavailable: only the live console
+    }
+  }
+
+  logSelect.addEventListener('change', async () => {
+    fileLoad?.abort();
+    fileLoad = null;
+    const name = logSelect.value;
+    const live = name === '';
+    log.parentElement.hidden = !live;
+    form.hidden = !live;
+    fileLog.hidden = live;
+    fileNote.hidden = live;
+    if (live) {
+      fileLog.replaceChildren();
+      renderMatches();
+      log.scrollTop = log.scrollHeight;
+      return;
+    }
+    const ctrl = new AbortController();
+    fileLoad = ctrl;
+    fileLog.replaceChildren();
+    fileNote.textContent = `Reading logs/${name}…`;
+    try {
+      const { lines, truncated } = await readLog(id, name, ctrl.signal);
+      if (ctrl.signal.aborted) return;
+      fileLog.replaceChildren(...lines.map((l) => h('div', null, l === '' ? ' ' : l)));
+      fileNote.textContent = `logs/${name} · ${lines.length} lines${truncated ? ' (only the end of a large file is shown)' : ''} · read-only`;
+      renderMatches();
+      fileLog.scrollTop = fileLog.scrollHeight;
+    } catch (err) {
+      if (!ctrl.signal.aborted) fileNote.textContent = `Could not read logs/${name}: ${err.message}`;
+    }
+  });
+
+  // --- command history -----------------------------------------------------------------
+
+  // Commands typed earlier (any browser) come from the audit log, newest first.
+  async function loadHistory() {
+    try {
+      const q = new URLSearchParams({ server_id: id, action: 'server.console_command', limit: '200' });
+      const { events } = await api('GET', `/audit?${q}`);
+      const earlier = [];
+      for (const e of events.toReversed()) {
+        if (!e.success || !e.user) continue;
+        const i = earlier.indexOf(e.target);
+        if (i >= 0) earlier.splice(i, 1);
+        earlier.push(e.target);
+      }
+      // Commands sent while loading stay the newest.
+      const merged = [...earlier.filter((c) => !sent.includes(c)), ...sent].slice(-MAX_HISTORY);
+      sent.splice(0, sent.length, ...merged);
+    } catch {
+      // history is a convenience: the console works without it
+    }
+  }
+
   input.addEventListener('keydown', (e) => {
     if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
     if (sent.length === 0) return;
@@ -350,7 +480,9 @@ export function mount(root, { param: id }) {
     sendBtn.disabled = true;
     try {
       await ws.command(channel, text);
-      if (sent.at(-1) !== text) sent.push(text);
+      const i = sent.indexOf(text);
+      if (i >= 0) sent.splice(i, 1);
+      sent.push(text);
       if (sent.length > MAX_HISTORY) sent.shift();
       cursor = -1;
       input.value = '';
@@ -373,6 +505,8 @@ export function mount(root, { param: id }) {
   });
 
   load();
+  loadHistory();
+  refreshLogList();
 
   // Usage polling only while the tab is visible.
   let timer = null;
@@ -387,6 +521,8 @@ export function mount(root, { param: id }) {
 
   return () => {
     clearInterval(timer);
+    cancelAnimationFrame(matchFrame);
+    fileLoad?.abort();
     document.removeEventListener('visibilitychange', onVisibility);
     offState();
     unsubscribe();

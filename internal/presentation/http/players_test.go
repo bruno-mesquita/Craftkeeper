@@ -10,7 +10,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
 	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
 )
 
@@ -20,7 +19,7 @@ type recordConsole struct {
 	cmds []string
 }
 
-func (r *recordConsole) SendCommand(_ context.Context, _, cmd string, _ servers.Actor) error {
+func (r *recordConsole) Send(_ context.Context, _, cmd string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.cmds = append(r.cmds, cmd)

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/console"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
 	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
 )
 
@@ -24,7 +23,7 @@ func (stubConsole) Subscribe(context.Context, string, console.Sink) (func(), err
 	return nil, domain.ErrServerNotRunning
 }
 
-func (stubConsole) SendCommand(context.Context, string, string, servers.Actor) error {
+func (stubConsole) Send(context.Context, string, string) error {
 	return domain.ErrServerNotRunning
 }
 

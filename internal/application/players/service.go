@@ -27,7 +27,7 @@ type Servers interface {
 
 // Console sends a command to a running server (console.Service).
 type Console interface {
-	SendCommand(ctx context.Context, serverID, command string, actor servers.Actor) error
+	Send(ctx context.Context, serverID, command string) error
 }
 
 // Accounts looks up Minecraft Java accounts at Mojang (mojang.Profiles).
@@ -218,7 +218,7 @@ func (s *Service) mutate(ctx context.Context, id string, actor servers.Actor, ac
 	}
 	switch srv.Status {
 	case domain.StatusRunning, domain.StatusStarting:
-		err = s.console.SendCommand(ctx, id, command, actor)
+		err = s.console.Send(ctx, id, command)
 	case domain.StatusStopped, domain.StatusCrashed, domain.StatusMissing:
 		err = viaFiles()
 	case domain.StatusUnknown:
@@ -229,7 +229,7 @@ func (s *Service) mutate(ctx context.Context, id string, actor servers.Actor, ac
 	var ve *domain.ValidationError
 	if !errors.As(err, &ve) {
 		_ = s.audit.Record(context.WithoutCancel(ctx), domain.AuditEvent{
-			CreatedAt: s.now().UTC(), UserID: actor.UserID, Action: action,
+			CreatedAt: s.now().UTC(), UserID: actor.UserID, ServerID: srv.ID, Action: action,
 			Target: srv.Name + ": " + target, IP: actor.IP, Success: err == nil,
 		})
 	}

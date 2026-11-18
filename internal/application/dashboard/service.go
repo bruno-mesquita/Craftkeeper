@@ -16,7 +16,7 @@ type ServerCounter interface {
 }
 
 type AuditReader interface {
-	Recent(ctx context.Context, limit int) ([]domain.AuditEvent, error)
+	List(ctx context.Context, f domain.AuditFilter) ([]domain.AuditEvent, error)
 }
 
 const recentEventsLimit = 10
@@ -38,7 +38,7 @@ func NewService(docker DockerPinger, servers ServerCounter, audit AuditReader) *
 }
 
 func (s *Service) Overview(ctx context.Context) (Overview, error) {
-	events, err := s.audit.Recent(ctx, recentEventsLimit)
+	events, err := s.audit.List(ctx, domain.AuditFilter{Limit: recentEventsLimit})
 	if err != nil {
 		return Overview{}, err
 	}

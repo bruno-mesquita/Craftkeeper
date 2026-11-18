@@ -79,9 +79,10 @@ func TestCrashLoopStopsServerAndRecordsIt(t *testing.T) {
 	if v.Status != domain.StatusCrashed || v.CrashRestarts != 3 || !v.CrashedAt.Equal(e.now) {
 		t.Fatalf("view = %s, restarts %d, at %v", v.Status, v.CrashRestarts, v.CrashedAt)
 	}
-	events, _ := e.auditDB.Recent(ctx, 1)
+	events, _ := e.auditDB.List(ctx, domain.AuditFilter{Limit: 1})
 	if len(events) != 1 || events[0].Action != domain.AuditServerCrashLoop || events[0].UserID != "" ||
-		events[0].Target != "Modded: 3 restarts" || !events[0].Success {
+		events[0].Target != "Modded: 3 restarts" || events[0].ServerID != e.v.ID || events[0].ServerName != "Modded" ||
+		!events[0].Success {
 		t.Fatalf("audit = %+v", events)
 	}
 	list, _ := e.svc.List(ctx)

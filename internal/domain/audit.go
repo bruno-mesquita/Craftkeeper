@@ -19,7 +19,9 @@ const (
 	AuditContainerDelete  = "container.delete"
 	AuditModpackConfigure = "modpack.configure"
 	AuditModpackInstall   = "modpack.install"
-	// AuditConsoleCommand targets "<server id>: <command>", the command truncated.
+	// AuditConsoleCommand is a command typed in the console; the target is the command,
+	// truncated. Commands the panel sends on its own (backups, player lists) are not recorded
+	// as console commands: the action that sent them is.
 	AuditConsoleCommand = "server.console_command"
 
 	// AuditServerCrashLoop is recorded without a user when the panel stops a server that
@@ -51,12 +53,39 @@ const (
 	AuditIPPardon        = "ip.pardon"
 )
 
+// AuditActions lists every action, in display order. Filters only accept these.
+var AuditActions = []string{
+	AuditSetupCompleted, AuditLogin, AuditLogout, AuditPasswordChanged,
+	AuditServerCreate, AuditServerUpdate, AuditServerStart, AuditServerStop, AuditServerRestart,
+	AuditServerKill, AuditServerDelete, AuditServerCrashLoop, AuditConsoleCommand,
+	AuditContainerDelete, AuditModpackConfigure, AuditModpackInstall,
+	AuditFileUpload, AuditFileWrite, AuditFileMkdir, AuditFileRename, AuditFileDelete, AuditFileExtract,
+	AuditBackupCreate, AuditBackupRestore, AuditBackupDelete, AuditBackupSchedule,
+	AuditWhitelistToggle, AuditWhitelistAdd, AuditWhitelistRemove,
+	AuditPlayerBan, AuditPlayerPardon, AuditIPBan, AuditIPPardon,
+}
+
 type AuditEvent struct {
 	ID        int64
 	CreatedAt time.Time
-	UserID    string // empty when the actor is unknown (e.g. failed login)
+	UserID    string // empty when the actor is unknown (e.g. failed login) or the panel itself
+	ServerID  string // empty for events not about one server
 	Action    string
 	Target    string
 	IP        string
 	Success   bool
+
+	// Filled when reading: the user's name and the server's current name, empty when there
+	// is none or it no longer exists.
+	Username   string
+	ServerName string
+}
+
+// AuditFilter selects audit events, newest first. Zero fields do not filter.
+type AuditFilter struct {
+	ServerID   string
+	Action     string
+	FailedOnly bool
+	BeforeID   int64 // only events with a smaller id (keyset pagination)
+	Limit      int
 }

@@ -404,11 +404,31 @@ func TestSendCommand(t *testing.T) {
 		t.Fatalf("audit = %+v", h.audit.events)
 	}
 	ok, failed := h.audit.events[0], h.audit.events[1]
-	if ok.Action != domain.AuditConsoleCommand || ok.Target != "Survival: say olá" || !ok.Success || ok.UserID != "U1" || ok.IP != "100.64.0.1" {
+	if ok.Action != domain.AuditConsoleCommand || ok.Target != "say olá" || ok.ServerID != sid || !ok.Success ||
+		ok.UserID != "U1" || ok.IP != "100.64.0.1" {
 		t.Fatalf("audit = %+v", ok)
 	}
-	if failed.Success || len(failed.Target) > len("Survival: ")+auditCommandMax+len("…") || !strings.HasSuffix(failed.Target, "…") {
+	if failed.Success || len(failed.Target) > auditCommandMax+len("…") || !strings.HasSuffix(failed.Target, "…") {
 		t.Fatalf("failed audit = %+v (len %d)", failed, len(failed.Target))
+	}
+}
+
+func TestSendIsNotAudited(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.servers.set(sid, domain.StatusStopped)
+	if err := h.svc.Send(ctx, sid, "save-off"); !errors.Is(err, domain.ErrServerNotRunning) {
+		t.Fatalf("stopped server: %v", err)
+	}
+	h.servers.set(sid, domain.StatusRunning)
+	if err := h.svc.Send(ctx, sid, "save-off"); err != nil {
+		t.Fatal(err)
+	}
+	if got := <-h.runtime.inputs; got != "save-off" {
+		t.Fatalf("input = %q", got)
+	}
+	if len(h.audit.events) != 0 {
+		t.Fatalf("panel command was audited: %+v", h.audit.events)
 	}
 }
 

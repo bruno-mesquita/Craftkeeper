@@ -89,7 +89,7 @@ func (s *Service) observeStart(ctx context.Context, ev domain.ContainerEvent, lo
 		if err != nil {
 			log.Error("crash guard: stop failed", "server_id", x.ID, "err", err)
 		}
-		s.record(s.ctx, Actor{}, domain.AuditServerCrashLoop, x.Name+": "+strconv.Itoa(restarts)+" restarts", err == nil)
+		s.record(s.ctx, Actor{}, domain.AuditServerCrashLoop, x.ID, x.Name+": "+strconv.Itoa(restarts)+" restarts", err == nil)
 	}()
 }
 

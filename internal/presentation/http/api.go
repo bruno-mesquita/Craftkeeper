@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/activity"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/auth"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/backups"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/dashboard"
@@ -22,6 +23,7 @@ type API struct {
 	auth       *auth.Service
 	monitoring *monitoring.Service
 	dashboard  *dashboard.Service
+	activity   *activity.Service
 	servers    *servers.Service
 	installers *installers.Service
 	files      *files.Service
@@ -35,9 +37,10 @@ type API struct {
 	log          *slog.Logger
 }
 
-func New(a *auth.Service, m *monitoring.Service, d *dashboard.Service, s *servers.Service, i *installers.Service,
-	f *files.Service, b *backups.Service, p *players.Service, ws *wspres.Hub, static fs.FS, secureCookie bool, log *slog.Logger) *API {
-	return &API{auth: a, monitoring: m, dashboard: d, servers: s, installers: i, files: f, backups: b, players: p, ws: ws,
+func New(a *auth.Service, m *monitoring.Service, d *dashboard.Service, act *activity.Service, s *servers.Service,
+	i *installers.Service, f *files.Service, b *backups.Service, p *players.Service, ws *wspres.Hub, static fs.FS,
+	secureCookie bool, log *slog.Logger) *API {
+	return &API{auth: a, monitoring: m, dashboard: d, activity: act, servers: s, installers: i, files: f, backups: b, players: p, ws: ws,
 		static: static, secureCookie: secureCookie, log: log}
 }
 
@@ -58,6 +61,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/system/containers", a.requireAuth(a.containerStats))
 	mux.HandleFunc("DELETE /api/v1/system/containers/{id}", a.requireAuth(a.deleteOrphanContainer))
 	mux.HandleFunc("GET /api/v1/dashboard", a.requireAuth(a.dashboardOverview))
+	mux.HandleFunc("GET /api/v1/audit", a.requireAuth(a.listAudit))
 
 	mux.HandleFunc("GET /api/v1/installers/{loader}/versions", a.requireAuth(a.minecraftVersions))
 	mux.HandleFunc("GET /api/v1/installers/{loader}/versions/{minecraft}", a.requireAuth(a.loaderVersions))

@@ -20,6 +20,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/activity"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/auth"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/backups"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/dashboard"
@@ -112,6 +113,7 @@ func newServerWith(t *testing.T, containers monitoring.ContainerCollector) *clie
 	api := httpapi.New(authSvc,
 		monitoring.NewService(stubCollector{}, containers, time.Second),
 		dashboard.NewService(docker.NewClient(filepath.Join(t.TempDir(), "no-docker.sock")), serversSvc, audit),
+		activity.NewService(audit),
 		serversSvc, installersSvc, files.NewService(serverFiles, serversSvc, audit), backupsSvc,
 		players.NewService(serverFiles, serversSvc, pc, fakeAccounts{}, pinger, audit),
 		wspres.NewHub(authSvc, nil, log), static, false, log)

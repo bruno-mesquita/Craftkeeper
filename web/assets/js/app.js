@@ -9,6 +9,7 @@ const app = document.getElementById('app');
 const routes = {
   overview: { title: 'Overview', load: () => import('./pages/overview.js') },
   servers: { title: 'Servers', load: () => import('./pages/servers.js'), detail: () => import('./pages/server.js') },
+  activity: { title: 'Activity', load: () => import('./pages/activity.js') },
   backups: { title: 'Backups', load: () => import('./pages/planned.js'), phase: 6 },
   users: { title: 'Users', load: () => import('./pages/planned.js'), phase: null },
   settings: { title: 'Settings', load: () => import('./pages/settings.js') },

@@ -149,7 +149,7 @@ func (s *Service) WriteText(ctx context.Context, id, p, content, version string,
 		return "", err
 	}
 	v, err := s.files.WriteText(id, p, content, version)
-	s.record(ctx, actor, domain.AuditFileWrite, srv.Name, "/"+p, err)
+	s.record(ctx, actor, domain.AuditFileWrite, srv, "/"+p, err)
 	return v, err
 }
 
@@ -167,7 +167,7 @@ func (s *Service) Upload(ctx context.Context, id, dir, name string, src io.Reade
 		return domain.FileEntry{}, err
 	}
 	e, err := s.files.Save(id, dir, name, src, overwrite)
-	s.record(ctx, actor, domain.AuditFileUpload, srv.Name, "/"+path.Join(dir, name), err)
+	s.record(ctx, actor, domain.AuditFileUpload, srv, "/"+path.Join(dir, name), err)
 	return e, err
 }
 
@@ -181,7 +181,7 @@ func (s *Service) Mkdir(ctx context.Context, id, p string, actor servers.Actor) 
 		return err
 	}
 	err = s.files.Mkdir(id, p)
-	s.record(ctx, actor, domain.AuditFileMkdir, srv.Name, "/"+p, err)
+	s.record(ctx, actor, domain.AuditFileMkdir, srv, "/"+p, err)
 	return err
 }
 
@@ -202,7 +202,7 @@ func (s *Service) Rename(ctx context.Context, id, from, to string, actor servers
 		return err
 	}
 	err = s.files.Rename(id, from, to)
-	s.record(ctx, actor, domain.AuditFileRename, srv.Name, "/"+from+" -> /"+to, err)
+	s.record(ctx, actor, domain.AuditFileRename, srv, "/"+from+" -> /"+to, err)
 	return err
 }
 
@@ -216,7 +216,7 @@ func (s *Service) Delete(ctx context.Context, id, p string, actor servers.Actor)
 		return err
 	}
 	err = s.files.Remove(id, p)
-	s.record(ctx, actor, domain.AuditFileDelete, srv.Name, "/"+p, err)
+	s.record(ctx, actor, domain.AuditFileDelete, srv, "/"+p, err)
 	return err
 }
 
@@ -235,7 +235,7 @@ func (s *Service) Extract(ctx context.Context, id, archive, dest string, overwri
 		return 0, err
 	}
 	n, err := s.files.Extract(id, archive, dest, overwrite)
-	s.record(ctx, actor, domain.AuditFileExtract, srv.Name, "/"+archive+" -> /"+dest, err)
+	s.record(ctx, actor, domain.AuditFileExtract, srv, "/"+archive+" -> /"+dest, err)
 	return n, err
 }
 
@@ -319,7 +319,7 @@ func (s *Service) ConfigureModpack(ctx context.Context, id, install, start strin
 			err = removeErr
 		}
 	}
-	s.record(ctx, actor, domain.AuditModpackConfigure, srv.Name, cleanInstall+" -> "+cleanStart, err)
+	s.record(ctx, actor, domain.AuditModpackConfigure, srv, cleanInstall+" -> "+cleanStart, err)
 	return err
 }
 
@@ -347,7 +347,7 @@ func (s *Service) InstallModpack(ctx context.Context, id string, actor servers.A
 		return servers.View{}, domain.ErrServerRunning
 	}
 	v, err := s.servers.Start(ctx, id, actor)
-	s.record(ctx, actor, domain.AuditModpackInstall, srv.Name, info.InstallScript, err)
+	s.record(ctx, actor, domain.AuditModpackInstall, srv, info.InstallScript, err)
 	return v, err
 }
 
@@ -357,10 +357,10 @@ func serverActive(status domain.ServerStatus) bool {
 
 // record audits a mutation. Validation failures never reach it; failures of the operation
 // itself are recorded as unsuccessful.
-func (s *Service) record(ctx context.Context, actor servers.Actor, action, server, target string, err error) {
+func (s *Service) record(ctx context.Context, actor servers.Actor, action string, srv servers.View, target string, err error) {
 	_ = s.audit.Record(context.WithoutCancel(ctx), domain.AuditEvent{
-		CreatedAt: s.now().UTC(), UserID: actor.UserID, Action: action,
-		Target: truncate(server+": "+target, 300), IP: actor.IP, Success: err == nil,
+		CreatedAt: s.now().UTC(), UserID: actor.UserID, ServerID: srv.ID, Action: action,
+		Target: truncate(srv.Name+": "+target, 300), IP: actor.IP, Success: err == nil,
 	})
 }
 

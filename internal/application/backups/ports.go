@@ -48,7 +48,7 @@ type Servers interface {
 // Console reaches a running game (console.Service): commands in, output lines out.
 type Console interface {
 	Subscribe(ctx context.Context, serverID string, sink console.Sink) (unsubscribe func(), err error)
-	SendCommand(ctx context.Context, serverID, command string, actor servers.Actor) error
+	Send(ctx context.Context, serverID, command string) error
 }
 
 type AuditRecorder interface {
