@@ -202,7 +202,7 @@ func (a *API) uploadError(w http.ResponseWriter, rc *http.ResponseController, er
 	var tooLarge *http.MaxBytesError
 	switch {
 	case errors.As(err, &tooLarge):
-		writeError(w, http.StatusRequestEntityTooLarge, "payload_too_large", "uploads are limited to 2 GiB per request")
+		writeError(w, http.StatusRequestEntityTooLarge, "payload_too_large", "uploads are limited to 10 GiB per request")
 	case clientSide:
 		writeError(w, http.StatusBadRequest, "invalid_multipart", "the upload was interrupted or malformed")
 	default:

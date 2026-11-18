@@ -68,8 +68,8 @@ $(TAILWIND_BIN):
 
 # Runs the built binary on the host (no Go needed) against a throwaway data dir.
 # Not dependent on build: building needs sudo, running must not.
-# Override to reach it over Tailscale: make run RUN_LISTEN=127.0.0.1:8090,100.126.54.17:8090
-RUN_LISTEN ?= 127.0.0.1:8090
+# Listens on loopback and the Tailscale IP (see MEMORY.md). Override: make run RUN_LISTEN=127.0.0.1:8090
+RUN_LISTEN ?= 127.0.0.1:8090,100.126.54.17:8090
 run:
 	MESQUITA_DATA_DIR=$(CURDIR)/.data MESQUITA_LISTEN=$(RUN_LISTEN) MESQUITA_LOG_LEVEL=debug ./bin/mesquita-panel
 

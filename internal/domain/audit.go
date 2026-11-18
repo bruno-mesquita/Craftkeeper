@@ -16,6 +16,7 @@ const (
 	AuditServerRestart    = "server.restart"
 	AuditServerKill       = "server.kill"
 	AuditServerDelete     = "server.delete"
+	AuditContainerDelete  = "container.delete"
 	AuditModpackConfigure = "modpack.configure"
 	AuditModpackInstall   = "modpack.install"
 	// AuditConsoleCommand targets "<server id>: <command>", the command truncated.

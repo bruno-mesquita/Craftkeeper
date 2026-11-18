@@ -388,3 +388,36 @@ func (s *Service) record(ctx context.Context, actor Actor, action, target string
 		CreatedAt: s.now().UTC(), UserID: actor.UserID, Action: action, Target: target, IP: actor.IP, Success: success,
 	})
 }
+// DeleteOrphanContainer force-removes a panel-labelled container whose server no longer
+// exists in the database. It refuses containers that belong to a registered server (use
+// Delete) and anything the runtime does not list as managed.
+func (s *Service) DeleteOrphanContainer(ctx context.Context, containerID string, actor Actor) error {
+	states, err := s.runtime.States(ctx)
+	if err != nil {
+		return err
+	}
+	var found *domain.ContainerState
+	for i := range states {
+		if states[i].ID == containerID {
+			found = &states[i]
+			break
+		}
+	}
+	if found == nil {
+		return domain.ErrNotFound
+	}
+	if _, err := s.repo.ByID(ctx, found.ServerID); err == nil {
+		return fmt.Errorf("%w: container %s belongs to server %s", domain.ErrNotManaged, found.ID, found.ServerID)
+	} else if !errors.Is(err, domain.ErrNotFound) {
+		return err
+	}
+	err = s.runtime.Stop(ctx, found.ID, found.ServerID)
+	if err == nil {
+		err = s.runtime.Remove(ctx, found.ID, found.ServerID)
+	}
+	if errors.Is(err, domain.ErrContainerMissing) {
+		err = nil
+	}
+	s.record(ctx, actor, domain.AuditContainerDelete, found.ID, err == nil)
+	return err
+}

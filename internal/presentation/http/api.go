@@ -53,6 +53,7 @@ func (a *API) Handler() http.Handler {
 
 	mux.HandleFunc("GET /api/v1/system/stats", a.requireAuth(a.systemStats))
 	mux.HandleFunc("GET /api/v1/system/containers", a.requireAuth(a.containerStats))
+	mux.HandleFunc("DELETE /api/v1/system/containers/{id}", a.requireAuth(a.deleteOrphanContainer))
 	mux.HandleFunc("GET /api/v1/dashboard", a.requireAuth(a.dashboardOverview))
 
 	mux.HandleFunc("GET /api/v1/installers/{loader}/versions", a.requireAuth(a.minecraftVersions))

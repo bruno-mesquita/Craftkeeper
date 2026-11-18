@@ -525,3 +525,29 @@ func TestCounts(t *testing.T) {
 		t.Fatalf("counts = %+v, %v", c, err)
 	}
 }
+
+func TestDeleteOrphanContainer(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	v, _ := e.svc.Create(ctx, validInput("S"), e.actor)
+
+	// Still registered: refused, container kept.
+	if err := e.svc.DeleteOrphanContainer(ctx, v.ContainerID, e.actor); !errors.Is(err, domain.ErrNotManaged) {
+		t.Fatalf("registered server: %v", err)
+	}
+	if _, ok := e.rt.containers[v.ContainerID]; !ok {
+		t.Fatal("container of a registered server was removed")
+	}
+	// Unknown container: not found.
+	if err := e.svc.DeleteOrphanContainer(ctx, "nope", e.actor); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("unknown container: %v", err)
+	}
+	// Orphan: removed.
+	_ = e.repo.Delete(ctx, v.ID)
+	if err := e.svc.DeleteOrphanContainer(ctx, v.ContainerID, e.actor); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := e.rt.containers[v.ContainerID]; ok {
+		t.Fatal("orphan container not removed")
+	}
+}

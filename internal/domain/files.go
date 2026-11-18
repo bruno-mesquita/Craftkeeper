@@ -12,9 +12,9 @@ const (
 	ServerPathSegmentMax = 255
 	EditableFileMaxBytes = 1 << 20
 	ListEntriesMax       = 10_000
-	UploadMaxBytes       = 2 << 30
+	UploadMaxBytes       = 10 << 30
 	ExtractEntriesMax    = 100_000
-	ExtractMaxBytes      = 8 << 30
+	ExtractMaxBytes      = 16 << 30
 )
 
 // FileType is the kind of a directory entry.

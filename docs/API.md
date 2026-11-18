@@ -124,6 +124,12 @@ rates are computed between samples, so the first sample of a container reports 0
 ```
 Errors: `503 docker_unavailable` when the Docker daemon cannot be reached.
 
+### `DELETE /system/containers/{id}` — auth + CSRF
+Stops and force-removes an orphan container: labelled `mesquita.managed=true` whose
+`mesquita.server_id` has no server record. Bind-mounted files are kept. A container of a
+registered server is refused (`409 container_not_managed`; use `DELETE /servers/{id}`).
+`204` · `404` (not a managed container) · `409` · `502` · `503`.
+
 ### `GET /dashboard` — auth
 ```json
 {
@@ -282,7 +288,7 @@ file is written unconditionally.
 
 ### `POST /servers/{id}/files/upload?path=<dir>&overwrite=true|false` — auth + CSRF
 `multipart/form-data`; every part with a file name is saved in `<dir>` under its base name
-(other fields are ignored). Streamed to disk, up to 2 GiB per request. Without
+(other fields are ignored). Streamed to disk, up to 10 GiB per request. Without
 `overwrite=true` an existing file answers `409 file_exists` (files saved earlier in the same
 request are kept).
 `201 {"files": [FileEntry]}` · `400 invalid_multipart` · `409 file_exists` ·
@@ -299,7 +305,7 @@ Body `{"from", "to"}`; also moves between directories. An existing `to` is never
 Body `{"path": "<zip file>", "destination": "<dir>", "overwrite"?: false}`. Entries are
 validated like any path (an entry with `..` or an absolute name rejects the whole archive);
 names without the zip UTF-8 flag are decoded as CP437, as the format specifies (so a byte
-`0x15` becomes `§`, common in Minecraft world names); symlinks are skipped. Limits: 100 000 entries and 8 GiB actually decompressed. Conflicts are
+`0x15` becomes `§`, common in Minecraft world names); symlinks are skipped. Limits: 100 000 entries and 16 GiB actually decompressed. Conflicts are
 checked before anything is written; a corrupt entry found midway leaves the entries already
 written.
 `200 {"entries": n}` · `409 file_exists` · `413 archive_too_large` · `422 invalid_archive`.

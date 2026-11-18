@@ -182,6 +182,16 @@ type containerStatsDTO struct {
 	} `json:"block_io"`
 }
 
+// deleteOrphanContainer removes a panel container whose server no longer exists.
+func (a *API) deleteOrphanContainer(w http.ResponseWriter, r *http.Request) {
+	extendDeadlines(w, stopDeadline)
+	if err := a.servers.DeleteOrphanContainer(r.Context(), r.PathValue("id"), actorOf(r)); err != nil {
+		writeDomainError(w, a.log, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (a *API) containerStats(w http.ResponseWriter, r *http.Request) {
 	snap, err := a.monitoring.Containers(r.Context())
 	if err != nil {

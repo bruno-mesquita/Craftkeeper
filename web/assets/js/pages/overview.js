@@ -1,6 +1,7 @@
 // Dashboard: live host and container metrics (polled; moves to WebSocket in phase 4) and recent events.
 import { api } from '../api.js';
-import { h } from '../dom.js';
+import { confirmDialog } from '../dialog.js';
+import { h, toast } from '../dom.js';
 import { bytes, dateTime, percent, rate } from '../format.js';
 import { icons } from '../icons.js';
 
@@ -53,7 +54,7 @@ export function mount(root) {
       h('h2', { class: 'mb-3 font-semibold' }, 'Servers'),
       h('table', { class: 'w-full text-left' },
         h('thead', { class: 'text-xs text-muted' },
-          h('tr', null, ['Server', 'State', 'CPU', 'Memory', 'Network'].map((c) => h('th', { class: 'pb-2 font-medium', scope: 'col' }, c)))),
+          h('tr', null, ['Server', 'State', 'CPU', 'Memory', 'Network', ''].map((c) => h('th', { class: 'pb-2 font-medium', scope: 'col' }, c)))),
         containers)),
     h('section', { class: 'card mt-6 overflow-x-auto' },
       h('h2', { class: 'mb-3 font-semibold' }, 'Recent events'),
@@ -78,7 +79,24 @@ export function mount(root) {
   }
 
   const containerMessage = (text) => containers.replaceChildren(
-    h('tr', null, h('td', { class: 'py-2 text-muted', colspan: '5' }, text)));
+    h('tr', null, h('td', { class: 'py-2 text-muted', colspan: '6' }, text)));
+
+  // An orphan is a panel container whose server no longer exists; remove it from the host.
+  async function removeOrphan(c) {
+    const ok = await confirmDialog({
+      title: `Remove container ${c.name}?`,
+      message: 'This container has no server in the panel. It is stopped and removed from Docker; its files on the host are not touched.',
+      confirmLabel: 'Remove', danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api('DELETE', `/system/containers/${c.id}`);
+      toast(`Container ${c.name} removed.`, 'success');
+    } catch (err) {
+      toast(`Could not remove container: ${err.message}`, 'error');
+    }
+    refreshContainers();
+  }
 
   async function refreshContainers() {
     try {
@@ -101,7 +119,9 @@ export function mount(root) {
           h('td', { class: `py-2 pr-4 ${running ? 'text-success' : 'text-muted'}` }, c.state),
           cell(percent(c.cpu_percent)),
           cell(`${bytes(c.memory.used_bytes)} of ${bytes(c.memory.limit_bytes)}`),
-          cell(`↓ ${rate(c.network.rx_bytes_per_second)} ↑ ${rate(c.network.tx_bytes_per_second)}`));
+          cell(`↓ ${rate(c.network.rx_bytes_per_second)} ↑ ${rate(c.network.tx_bytes_per_second)}`),
+          h('td', { class: 'py-2 text-right' }, names.has(c.server_id) ? null
+            : h('button', { class: 'btn btn-danger px-2 py-1', type: 'button', 'aria-label': `Remove container ${c.name}`, onclick: () => removeOrphan(c) }, 'Remove')));
       }));
     } catch (err) {
       containerMessage(err.code === 'docker_unavailable' ? 'Docker unreachable.' : `Server metrics unavailable: ${err.message}`);
