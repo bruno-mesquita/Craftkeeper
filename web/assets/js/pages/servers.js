@@ -6,6 +6,7 @@ import { api } from '../api.js';
 import { confirmDialog, openDialog } from '../dialog.js';
 import { clearFormError, field, formValues, h, showFormError, toast } from '../dom.js';
 import { bytes, percent } from '../format.js';
+import { serverIcon } from '../icon-manager.js';
 import { mountModpackManager } from '../modpack-manager.js';
 import { detectModpack } from '../modpack-zip.js';
 import { ACTIONS, ACTIVE, CREATING_POLL_MS, LOADERS, STATUS, confirmAction, gameVersion, lifecycleActions, limitFields, runAction } from '../server-actions.js';
@@ -60,7 +61,7 @@ export function mount(root) {
       seen.add(s.id);
       let row = rows.get(s.id);
       if (!row) {
-        row = createRow();
+        row = createRow(s.id);
         rows.set(s.id, row);
       }
       row.update(s);
@@ -75,7 +76,7 @@ export function mount(root) {
     }
   }
 
-  function createRow() {
+  function createRow(id) {
     const name = h('a', { class: 'font-medium hover:underline' });
     const desc = h('span', { class: 'block max-w-xs truncate text-xs text-muted' });
     const failure = h('span', { class: 'block max-w-xs text-xs text-danger' });
@@ -86,7 +87,8 @@ export function mount(root) {
     const use = h('td', { class: 'py-3 pr-4 whitespace-nowrap tabular-nums text-muted' });
     const actions = h('div', { class: 'flex justify-end gap-1' });
     const tr = h('tr', { class: 'border-t border-border align-top' },
-      h('td', { class: 'py-3 pr-4' }, name, desc, failure),
+      h('td', { class: 'py-3 pr-4' },
+        h('div', { class: 'flex items-start gap-3' }, serverIcon(id, 'size-8').el, h('div', null, name, desc, failure))),
       h('td', { class: 'py-3 pr-4' }, status),
       version, port, limits, use,
       h('td', { class: 'py-3' }, actions));

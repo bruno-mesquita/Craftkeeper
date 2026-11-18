@@ -342,3 +342,21 @@ Plano: `~/.claude/plans/preciso-que-faca-o-fuzzy-haven.md`.
   `server-actions.js` (compartilhado com os diálogos de criar/editar da lista). Sem CSS novo.
 - **Testado:** `sudo make check` passou (2026-11-18; binário 13,7 MB); sintaxe JS com `node --check`.
 - **Verificado de verdade (usuário, 2026-11-18):** teste manual da aba no navegador.
+
+## Ícone do servidor — `server-icon.png` (2026-11-18)
+
+Plano: `~/.claude/plans/veja-com-da-suporte-glittery-milner.md`.
+- **D52 · Ícone só no frontend, sobre a API de arquivos** (mesmo raciocínio da D49) — o jogo lê
+  `server-icon.png` (PNG 64×64) da raiz ao iniciar; o itzg só o escreve com a env `ICON`, que
+  não usamos, então o arquivo do painel é mantido. O browser recorta para quadrado e escala para
+  64×64 (sem suavização se a origem tiver ≤ 64 px, para pixel art), gera PNG no canvas e envia
+  por `POST /files/upload?path=&overwrite=true`; remover = `DELETE /files`. Preview via `data:`
+  URL (CSP `img-src 'self' data:`, sem mudança). Origem ≤ 10 MiB. Sem mudança de API/backend.
+- **Implementado:** `web/assets/js/icon-manager.js`, seção no topo da aba "Properties"
+  (`pages/server.js`), com "Save and restart" quando rodando. `make css` regenerado.
+- **Testado:** `sudo make check` passou; verificado pelo usuário no navegador e no jogo (2026-11-18).
+- **Ícone no header e na lista** (pedido do usuário, 2026-11-18): `serverIcon(id, size)` em
+  `icon-manager.js` — `<img>` direto em `/files/download` (octet-stream; o `<img>` decodifica pelo
+  conteúdo; `nosniff` só afeta script/style), sem ícone = tile vazio. Header 48 px, lista 32 px
+  (uma carga por linha: linhas são atualizadas no lugar). Salvar/remover recarrega o do header.
+  Testado: `sudo make check` passou; conferido pelo usuário no navegador (2026-11-18).

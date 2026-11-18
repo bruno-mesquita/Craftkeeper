@@ -1,11 +1,12 @@
 // Server page: header with live status and lifecycle actions, then tabs: the live console
 // (WebSocket channel server:<id>, docs/WEBSOCKET.md), the file manager, backups, players, the
-// server.properties form and the memory/CPU limits. Usage is polled over REST.
+// server list icon with the server.properties form, and the memory/CPU limits. Usage is polled over REST.
 import { api, ApiError } from '../api.js';
 import { h, toast } from '../dom.js';
 import { bytes, percent } from '../format.js';
 import { mountBackupManager } from '../backup-manager.js';
 import { mountFileManager } from '../file-manager.js';
+import { mountIconManager, serverIcon } from '../icon-manager.js';
 import { mountPlayerManager } from '../player-manager.js';
 import { mountPropertiesManager } from '../properties-manager.js';
 import { mountResourcesManager } from '../resources-manager.js';
@@ -40,6 +41,7 @@ export function mount(root, { param: id }) {
   let cursor = -1; // position while browsing history with ↑/↓
 
   const title = h('h1', null, 'Loading…');
+  const headerIcon = serverIcon(id, 'size-12');
   const status = h('span', { class: 'badge' });
   const meta = h('p', { class: 'text-xs text-muted' });
   const usage = h('p', { class: 'text-xs text-muted tabular-nums' });
@@ -71,6 +73,7 @@ export function mount(root, { param: id }) {
   let players = null; // player manager, mounted on first use
   const propertiesPanel = h('section', { class: 'card', id: 'panel-properties', role: 'tabpanel', 'aria-labelledby': 'tab-properties', hidden: true });
   let properties = null; // server.properties form, mounted on first use
+  let icon = null; // server-icon.png, mounted with the properties form
   const resourcesPanel = h('section', { class: 'card', id: 'panel-resources', role: 'tabpanel', 'aria-labelledby': 'tab-resources', hidden: true });
   let resources = null; // memory/CPU limits form, mounted on first use
 
@@ -104,9 +107,15 @@ export function mount(root, { param: id }) {
       players.refresh();
     }
     if (name === 'properties' && !properties) {
-      properties = mountPropertiesManager(propertiesPanel, { id, onRestart: () => act('restart') });
+      const iconRoot = h('div');
+      const formRoot = h('div');
+      propertiesPanel.replaceChildren(iconRoot, formRoot);
+      icon = mountIconManager(iconRoot, { id, onRestart: () => act('restart'), onChange: headerIcon.reload });
+      properties = mountPropertiesManager(formRoot, { id, onRestart: () => act('restart') });
+      icon.setRunning(Boolean(server && ACTIVE.has(server.status)));
       properties.setRunning(Boolean(server && ACTIVE.has(server.status)));
     } else if (name === 'properties') {
+      icon.refresh();
       properties.refresh();
     }
     if (name === 'resources' && !resources) {
@@ -137,9 +146,11 @@ export function mount(root, { param: id }) {
   root.replaceChildren(
     back,
     h('div', { class: 'mt-4 mb-6 flex flex-wrap items-start justify-between gap-4' },
-      h('div', { class: 'flex flex-col gap-1' },
-        h('div', { class: 'flex flex-wrap items-center gap-3' }, title, status),
-        meta, usage),
+      h('div', { class: 'flex items-start gap-4' },
+        headerIcon.el,
+        h('div', { class: 'flex flex-col gap-1' },
+          h('div', { class: 'flex flex-wrap items-center gap-3' }, title, status),
+          meta, usage)),
       actions),
     notice,
     tablist,
@@ -173,6 +184,7 @@ export function mount(root, { param: id }) {
     backups?.setRunning(ACTIVE.has(server.status));
     players?.setRunning(ACTIVE.has(server.status));
     properties?.setRunning(ACTIVE.has(server.status));
+    icon?.setRunning(ACTIVE.has(server.status));
     resources?.setServer(server);
   }
 
