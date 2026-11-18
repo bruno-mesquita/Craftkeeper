@@ -256,7 +256,8 @@ Plano: `~/.claude/plans/na-tela-de-detalhes-glittery-panda.md`.
 
 ## Modpacks — implementação inicial
 
-- ZIP é enviado pela aba Modpack usando o upload e a extração segura já existentes; colisões
+- ZIP é enviado no diálogo "New server" (a aba Modpack da tela do servidor foi removida em
+  2026-11-18 a pedido do usuário) usando o upload e a extração segura já existentes; colisões
   não são sobrescritas. A UI lista `.sh` regulares e exige seleção de instalador e inicializador.
 - Seleção e estado ficam em arquivos `.mesquita-modpack*` na pasta do servidor; a listagem de
   arquivos oculta esses metadados. Backups preservam estado e configuração.
@@ -268,7 +269,8 @@ Plano: `~/.claude/plans/na-tela-de-detalhes-glittery-panda.md`.
 - O ZIP também pode ser escolhido no diálogo "New server": o frontend cria o servidor
   (`POST /servers`) e então reusa `mountModpackManager` (`initialFile`) no mesmo diálogo para
   upload, extração, escolha de scripts e instalação. Sem mudança de API/backend; se o import
-  falha, o servidor já existe e o retry é possível no diálogo ou na aba Modpack.
+  falha, o servidor já existe e o retry só é possível no próprio diálogo (fechar = servidor sem
+  modpack). Endpoints `/servers/{id}/modpack*` continuam (usados pelo diálogo).
 - Containers criados antes deste wrapper continuam sem alteração e retornam `supported=false`.
 - **Verificação pendente:** não executada nesta implementação; falta validar compilation/contratos
   e um ZIP de server pack real no container.

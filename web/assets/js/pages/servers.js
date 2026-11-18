@@ -349,7 +349,7 @@ export function mount(root) {
       const done = h('button', { class: 'btn btn-ghost', type: 'button' }, 'Close');
       done.addEventListener('click', close);
       const waiting = h('p', { class: 'text-sm text-muted', role: 'status' },
-        `Creating ${created.name}… The first server of each Java version downloads its game image, which can take a few minutes. You can close this dialog and import the modpack later from the server's Modpack tab.`);
+        `Creating ${created.name}… The first server of each Java version downloads its game image, which can take a few minutes. Keep this dialog open: the modpack import continues here when the server is ready.`);
       root.append(waiting);
       form.replaceChildren(root, h('div', { class: 'flex justify-end' }, done));
       const poll = async () => {
