@@ -112,7 +112,7 @@ func newServerWith(t *testing.T, containers monitoring.ContainerCollector) *clie
 		monitoring.NewService(stubCollector{}, containers, time.Second),
 		dashboard.NewService(docker.NewClient(filepath.Join(t.TempDir(), "no-docker.sock")), serversSvc, audit),
 		serversSvc, installersSvc, files.NewService(serverFiles, serversSvc, audit), backupsSvc,
-		players.NewService(serverFiles, serversSvc, pc, audit),
+		players.NewService(serverFiles, serversSvc, pc, fakeAccounts{}, audit),
 		wspres.NewHub(authSvc, nil, log), static, log)
 
 	srv := httptest.NewServer(api.Handler())

@@ -55,7 +55,9 @@ export function mountPlayerManager(root, { id }) {
       el,
       render(items) {
         list.replaceChildren(...items.map((item) => h('li', { class: 'flex items-center justify-between gap-3 py-2' },
-          h('div', { class: 'min-w-0' }, details(item)),
+          h('div', { class: 'flex min-w-0 items-center gap-3' },
+            item.uuid && avatar(item),
+            h('div', { class: 'min-w-0' }, details(item))),
           h('button', {
             class: 'btn btn-ghost px-2 py-1 text-xs text-danger', type: 'button',
             'aria-label': `${rowLabel} ${item.name ?? item.ip}`, onclick: () => onRemove(item),
@@ -63,6 +65,20 @@ export function mountPlayerManager(root, { id }) {
         none.hidden = items.length > 0;
       },
     };
+  }
+
+  // Skin face served by the panel (docs/API.md, "GET /players/{uuid}/avatar"); the initial
+  // stands in when the account has no skin or Mojang cannot be reached.
+  function avatar({ uuid, name }) {
+    const box = 'size-8 shrink-0 rounded-sm border border-border';
+    const img = h('img', {
+      class: `${box} bg-surface [image-rendering:pixelated]`, src: `/api/v1/players/${encodeURIComponent(uuid)}/avatar`,
+      alt: '', width: '32', height: '32', loading: 'lazy', decoding: 'async',
+    });
+    img.addEventListener('error', () => img.replaceWith(h('span', {
+      class: `${box} flex items-center justify-center bg-surface text-xs font-semibold text-muted`, 'aria-hidden': 'true',
+    }, (name || '?').charAt(0).toUpperCase())), { once: true });
+    return img;
   }
 
   const detail = (main, ...rest) => [
@@ -160,7 +176,7 @@ export function mountPlayerManager(root, { id }) {
   function renderNote() {
     note.textContent = running
       ? 'The server is running: changes are applied through its console.'
-      : 'The server is stopped: changes are written to its files. Adding players needs the server running when it checks accounts online (online-mode).';
+      : 'The server is stopped: changes are written to its files. Player accounts are looked up at Mojang.';
   }
   renderNote();
 

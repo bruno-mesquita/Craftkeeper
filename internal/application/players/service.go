@@ -29,20 +29,27 @@ type Console interface {
 	SendCommand(ctx context.Context, serverID, command string, actor servers.Actor) error
 }
 
+// Accounts looks up Minecraft Java accounts at Mojang (mojang.Profiles).
+type Accounts interface {
+	Lookup(ctx context.Context, name string) (domain.Player, error)
+	Face(ctx context.Context, uuid string) ([]byte, error)
+}
+
 type AuditRecorder interface {
 	Record(ctx context.Context, e domain.AuditEvent) error
 }
 
 type Service struct {
-	files   Files
-	servers Servers
-	console Console
-	audit   AuditRecorder
-	now     func() time.Time
+	files    Files
+	servers  Servers
+	console  Console
+	accounts Accounts
+	audit    AuditRecorder
+	now      func() time.Time
 }
 
-func NewService(f Files, s Servers, c Console, audit AuditRecorder) *Service {
-	return &Service{files: f, servers: s, console: c, audit: audit, now: time.Now}
+func NewService(f Files, s Servers, c Console, accounts Accounts, audit AuditRecorder) *Service {
+	return &Service{files: f, servers: s, console: c, accounts: accounts, audit: audit, now: time.Now}
 }
 
 // Lists is what the Players tab shows.
@@ -92,13 +99,13 @@ func (s *Service) AddWhitelist(ctx context.Context, id, name string, actor serve
 		return err
 	}
 	return s.mutate(ctx, id, actor, domain.AuditWhitelistAdd, name, "whitelist add "+name, func() error {
-		uuid, err := s.offlineUUID(id, name)
+		player, err := s.resolve(ctx, id, name)
 		if err != nil {
 			return err
 		}
 		return editList(s, id, domain.WhitelistFile, func(l []domain.Player) []domain.Player {
-			l = without(l, func(p domain.Player) bool { return strings.EqualFold(p.Name, name) })
-			return append(l, domain.Player{UUID: uuid, Name: name})
+			l = without(l, func(p domain.Player) bool { return strings.EqualFold(p.Name, name) || p.UUID == player.UUID })
+			return append(l, player)
 		})
 	})
 }
@@ -122,13 +129,13 @@ func (s *Service) Ban(ctx context.Context, id, name, reason string, actor server
 		return err
 	}
 	return s.mutate(ctx, id, actor, domain.AuditPlayerBan, name, strings.TrimSpace("ban "+name+" "+reason), func() error {
-		uuid, err := s.offlineUUID(id, name)
+		player, err := s.resolve(ctx, id, name)
 		if err != nil {
 			return err
 		}
 		return editList(s, id, domain.BannedPlayersFile, func(l []domain.PlayerBan) []domain.PlayerBan {
-			l = without(l, func(b domain.PlayerBan) bool { return strings.EqualFold(b.Name, name) })
-			return append(l, domain.PlayerBan{UUID: uuid, Name: name, Created: domain.BanTimestamp(s.now()),
+			l = without(l, func(b domain.PlayerBan) bool { return strings.EqualFold(b.Name, name) || b.UUID == player.UUID })
+			return append(l, domain.PlayerBan{UUID: player.UUID, Name: player.Name, Created: domain.BanTimestamp(s.now()),
 				Source: "Mesquita Panel", Expires: "forever", Reason: banReason(reason)})
 		})
 	})
@@ -201,17 +208,33 @@ func (s *Service) mutate(ctx context.Context, id string, actor servers.Actor, ac
 	return err
 }
 
-// offlineUUID is the UUID to store for a player while the server is stopped. Online-mode
-// UUIDs come from Mojang, which the panel does not query, so that case needs the game running.
-func (s *Service) offlineUUID(id, name string) (string, error) {
+// resolve is the entry to store for a player while the server is stopped: the computed
+// UUID on an offline-mode server, otherwise the Mojang account (UUID and name spelling).
+func (s *Service) resolve(ctx context.Context, id, name string) (domain.Player, error) {
 	props, err := s.read(id, domain.PropertiesFile)
 	if err != nil {
-		return "", err
+		return domain.Player{}, err
 	}
-	if v, ok := domain.PropertyValue(props.Content, "online-mode"); !ok || strings.TrimSpace(v) != "false" {
-		return "", &domain.ValidationError{Field: "name", Message: "start the server to change players: it verifies accounts online, so their UUIDs are only known to the running game"}
+	if v, ok := domain.PropertyValue(props.Content, "online-mode"); ok && strings.TrimSpace(v) == "false" {
+		return domain.Player{UUID: domain.OfflineUUID(name), Name: name}, nil
 	}
-	return domain.OfflineUUID(name), nil
+	p, err := s.accounts.Lookup(ctx, name)
+	if errors.Is(err, domain.ErrPlayerNotFound) {
+		return p, &domain.ValidationError{Field: "name", Message: "no Minecraft account has this name"}
+	}
+	return p, err
+}
+
+// Avatar is the PNG face of a player's skin. Offline-mode UUIDs have no account behind them.
+func (s *Service) Avatar(ctx context.Context, uuid string) ([]byte, error) {
+	uuid, err := domain.ParseUUID(uuid)
+	if err != nil {
+		return nil, err
+	}
+	if domain.IsOfflineUUID(uuid) {
+		return nil, domain.ErrNotFound
+	}
+	return s.accounts.Face(ctx, uuid)
 }
 
 // read returns a file's text; a missing file reads as empty.

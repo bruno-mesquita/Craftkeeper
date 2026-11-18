@@ -39,6 +39,18 @@ func (a *API) listPlayers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// playerAvatar serves the face of a player's skin, looked up at Mojang. The browser may keep it a day.
+func (a *API) playerAvatar(w http.ResponseWriter, r *http.Request) {
+	img, err := a.players.Avatar(r.Context(), r.PathValue("uuid"))
+	if err != nil {
+		writeDomainError(w, a.log, err)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	_, _ = w.Write(img)
+}
+
 // playerAction decodes the body and runs one mutation, answering 204.
 func (a *API) playerAction(do func(r *http.Request, id string, b playerBody, actor servers.Actor) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -57,6 +69,7 @@ func (a *API) playerAction(do func(r *http.Request, id string, b playerBody, act
 func (a *API) playerRoutes(mux *http.ServeMux, route func(http.HandlerFunc) http.HandlerFunc) {
 	const base = "/api/v1/servers/{id}/players"
 	mux.HandleFunc("GET "+base, route(a.listPlayers))
+	mux.HandleFunc("GET /api/v1/players/{uuid}/avatar", a.requireAuth(a.playerAvatar))
 	mux.HandleFunc("PUT "+base+"/whitelist", route(a.playerAction(func(r *http.Request, id string, b playerBody, actor servers.Actor) error {
 		return a.players.SetWhitelistEnabled(r.Context(), id, b.Enabled, actor)
 	})))

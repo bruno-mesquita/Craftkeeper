@@ -8,6 +8,23 @@ func TestOfflineUUID(t *testing.T) {
 	}
 }
 
+func TestParseUUID(t *testing.T) {
+	const want = "069a79f4-44e9-4726-a5be-fca90e38aaf5"
+	for _, in := range []string{"069a79f444e94726a5befca90e38aaf5", "069A79F4-44E9-4726-A5BE-FCA90E38AAF5"} {
+		if got, err := ParseUUID(in); err != nil || got != want {
+			t.Errorf("ParseUUID(%q) = %q, %v", in, got, err)
+		}
+	}
+	for _, in := range []string{"", "069a79f4-44e94726a5befca90e38aaf5", "../../etc/passwd", "069a79f444e94726a5befca90e38aafz"} {
+		if _, err := ParseUUID(in); err == nil {
+			t.Errorf("ParseUUID(%q) accepted", in)
+		}
+	}
+	if IsOfflineUUID(want) || !IsOfflineUUID(OfflineUUID("Notch")) {
+		t.Error("IsOfflineUUID misclassifies")
+	}
+}
+
 func TestSetProperty(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		{"", "white-list=true\n"},

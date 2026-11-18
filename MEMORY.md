@@ -245,14 +245,37 @@ Plano: `~/.claude/plans/a-pr-xima-a-reactive-minsky.md`. Decisões D43–D45.
 Plano: `~/.claude/plans/na-tela-de-detalhes-glittery-panda.md`.
 - **Decisão:** rodando (running/starting) → mudanças via console stdin (o jogo dono dos
   arquivos resolve UUID e persiste); parado → edita `whitelist.json` / `banned-*.json` /
-  `server.properties` pelo adapter `os.Root`. Parado + `online-mode` != `false` → 422 (UUID
-  offline seria errado; painel não consulta a Mojang). Leitura sempre dos arquivos. Switch:
+  `server.properties` pelo adapter `os.Root`. Parado + online-mode → UUID consultado na
+  Mojang (D50; antes era 422). Leitura sempre dos arquivos. Switch:
   `whitelist on|off` ou `white-list`+`enforce-whitelist`.
 - **Implementado:** `domain/players.go`, `application/players`, `presentation/http/players.go`
   (7 rotas, `docs/API.md` "Players"), `web/assets/js/player-manager.js` + aba em `pages/server.js`,
   auditoria `whitelist.*`, `player.*`, `ip.*`.
 - **Testado:** pendente — rodar `sudo make check` (`players_test.go`, `domain/players_test.go`).
   Não verificado contra Minecraft real (comandos via console, formato dos JSONs).
+
+## Whitelist parado (online-mode) + avatares (2026-11-18)
+
+Plano: `~/.claude/plans/preciso-que-seja-possivel-twinkling-wadler.md`.
+- **D50 · Lookup de conta na Mojang** (escolha do usuário) — servidor parado em online-mode:
+  `infrastructure/mojang` busca `api.mojang.com/users/profiles/minecraft/<nome>` e grava UUID +
+  grafia da Mojang em `whitelist.json`/`banned-players.json` (port `players.Accounts`). Nome
+  inexistente → `422` (campo `name`); Mojang fora/429 → `503 account_lookup_unavailable`.
+  Offline-mode continua com `OfflineUUID` sem rede. Hosts fixos, timeout 15 s, User-Agent
+  `mesquita-panel`, sem cache de lookup.
+- **D51 · Avatar por proxy** — `GET /api/v1/players/{uuid}/avatar` (auth): sessionserver →
+  textures (só aceita host `textures.minecraft.net` + hash hex, refeito em HTTPS; Mojang
+  devolve `http://`), skin PNG ≤ 64 KiB 64×64/64×32, rosto 8×8 + chapéu (chapéu 100% opaco em
+  skin legada é ignorado), stdlib `image/png`/`image/draw`. Browser guarda 1 dia
+  (`Cache-Control: private, max-age=86400`); sem cache no servidor. UUID v3 (offline) → 404
+  sem rede. CSP `img-src 'self'` mantida. UI: `<img>` pixelado na whitelist e banidos,
+  fallback com a inicial.
+- **Implementado:** domain (`ParseUUID`, `IsOfflineUUID`, erros), `infrastructure/mojang`,
+  `players.Service.resolve/Avatar`, rota + mapeamento 503, `player-manager.js`, `docs/API.md`.
+- **Testado:** formato real conferido via curl (conta `Master_On99`, 2026-11-18: profile,
+  textures com URL `http://`, skin 64×64, 404 p/ nome inexistente). `sudo make check` passou
+  (2026-11-18: gofmt, vet, testes incl. `mojang`, build). Validado pelo usuário no painel:
+  adicionou `Master_On99` com servidor parado e o avatar apareceu.
 
 ## Aba Properties — `server.properties` por formulário (2026-11-18)
 

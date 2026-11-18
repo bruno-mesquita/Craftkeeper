@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
+	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
 )
 
 // recordConsole remembers the commands sent to the "running" game.
@@ -29,6 +30,28 @@ func (r *recordConsole) sent() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return append([]string(nil), r.cmds...)
+}
+
+// fakeAccounts stands in for Mojang: "Notch" exists, "Unreachable" fails, others are unknown.
+type fakeAccounts struct{}
+
+const notchUUID = "069a79f4-44e9-4726-a5be-fca90e38aaf5"
+
+func (fakeAccounts) Lookup(_ context.Context, name string) (domain.Player, error) {
+	switch strings.ToLower(name) {
+	case "notch":
+		return domain.Player{UUID: notchUUID, Name: "Notch"}, nil
+	case "unreachable":
+		return domain.Player{}, domain.ErrAccountLookupUnavailable
+	}
+	return domain.Player{}, domain.ErrPlayerNotFound
+}
+
+func (fakeAccounts) Face(_ context.Context, uuid string) ([]byte, error) {
+	if uuid == notchUUID {
+		return []byte("\x89PNG fake"), nil
+	}
+	return nil, domain.ErrNotFound
 }
 
 func TestPlayersRequireAuthAndCSRF(t *testing.T) {
@@ -57,9 +80,23 @@ func TestPlayersContractStopped(t *testing.T) {
 		t.Fatalf("empty lists = %v", body)
 	}
 
-	// Adding a player needs offline UUIDs: refused until the server is known to be offline-mode.
-	res, body = c.do("POST", base+"/whitelist", map[string]string{"name": "Notch"}, nil)
+	// Online-mode (the default): the account is looked up at Mojang.
+	res, body = c.do("POST", base+"/whitelist", map[string]string{"name": "notch"}, nil)
+	expect(t, res, body, http.StatusNoContent, "")
+	res, body = c.do("POST", base+"/whitelist", map[string]string{"name": "Nobody"}, nil)
 	expect(t, res, body, http.StatusUnprocessableEntity, "validation_failed")
+	res, body = c.do("POST", base+"/whitelist", map[string]string{"name": "Unreachable"}, nil)
+	expect(t, res, body, http.StatusServiceUnavailable, "account_lookup_unavailable")
+	res, body = c.do("GET", base, nil, nil)
+	expect(t, res, body, http.StatusOK, "")
+	if p := body["whitelist"].(map[string]any)["players"].([]any); len(p) != 1 ||
+		p[0].(map[string]any)["uuid"] != notchUUID || p[0].(map[string]any)["name"] != "Notch" {
+		t.Fatalf("online whitelist = %v", p)
+	}
+	res, body = c.do("DELETE", base+"/whitelist", map[string]string{"name": "Notch"}, nil)
+	expect(t, res, body, http.StatusNoContent, "")
+
+	// Offline-mode: the UUID is computed, no lookup.
 	os.WriteFile(filepath.Join(dir, "server.properties"), []byte("#Minecraft server properties\nonline-mode=false\nwhite-list=false\n"), 0o640)
 
 	res, body = c.do("POST", base+"/whitelist", map[string]string{"name": "Notch"}, nil)
@@ -154,4 +191,20 @@ func TestPlayersContractRunning(t *testing.T) {
 			t.Errorf("%s written while the server runs", f)
 		}
 	}
+}
+
+func TestPlayerAvatar(t *testing.T) {
+	c := newServer(t)
+	res, body := c.do("GET", "/api/v1/players/"+notchUUID+"/avatar", nil, nil)
+	expect(t, res, body, http.StatusUnauthorized, "unauthenticated")
+	c.setupAndLogin()
+	res, _ = c.do("GET", "/api/v1/players/"+notchUUID+"/avatar", nil, nil)
+	if res.StatusCode != http.StatusOK || res.Header.Get("Content-Type") != "image/png" || res.Header.Get("Cache-Control") != "private, max-age=86400" {
+		t.Fatalf("avatar: %d %s %s", res.StatusCode, res.Header.Get("Content-Type"), res.Header.Get("Cache-Control"))
+	}
+	// Offline-mode UUIDs have no account: answered without a lookup.
+	res, body = c.do("GET", "/api/v1/players/b50ad385-829d-3141-a216-7e7d7539ba7f/avatar", nil, nil)
+	expect(t, res, body, http.StatusNotFound, "not_found")
+	res, body = c.do("GET", "/api/v1/players/not-a-uuid/avatar", nil, nil)
+	expect(t, res, body, http.StatusUnprocessableEntity, "validation_failed")
 }

@@ -47,6 +47,7 @@ unless marked *planned*.
 | 502 | `docker_error` | Docker rejected the operation (details only in logs) |
 | 503 | `docker_unavailable` | The Docker daemon cannot be reached |
 | 503 | `installer_unavailable` | An official version source (Mojang, Fabric, Forge, NeoForge) cannot be reached |
+| 503 | `account_lookup_unavailable` | Mojang cannot be reached to look up a player account or skin |
 
 ## Objects
 
@@ -447,10 +448,11 @@ Whitelist and ban lists of a Minecraft server. The lists are read from the game'
   after the `204`. The commands also appear as `server.console_command` in the audit log.
 - **Stopped server (or missing container):** the files are edited directly. The whitelist
   switch sets `white-list` and `enforce-whitelist` in `server.properties`, keeping its other
-  lines. Adding a player or a player ban needs a UUID: only offline-mode servers
-  (`online-mode=false` in `server.properties`) get one computed by the panel; otherwise
-  `422 validation_failed` (field `name`) asks for the server to be started. Removals and IP
-  bans never need a UUID.
+  lines. Adding a player or a player ban needs a UUID: offline-mode servers
+  (`online-mode=false` in `server.properties`) get one computed by the panel; otherwise the
+  account is looked up at Mojang (`api.mojang.com`) and stored with Mojang's UUID and name
+  spelling. An unknown name is `422 validation_failed` (field `name`); Mojang unreachable or
+  rate limiting is `503 account_lookup_unavailable`. Removals and IP bans never need a UUID.
 - Restarting servers answer `409 server_busy`; without Docker, `503 docker_unavailable`.
 - A list file that is not a valid JSON array is never overwritten: `422 validation_failed`
   (field is the file name).
@@ -471,7 +473,8 @@ game's own strings (`expires` is `forever` for panel-made bans).
 Body `{"enabled": bool}`. `204`.
 
 ### `POST` / `DELETE /servers/{id}/players/whitelist` — auth + CSRF
-Body `{"name"}`: 1 to 16 letters, digits or underscores. `204` · `422 validation_failed`.
+Body `{"name"}`: 1 to 16 letters, digits or underscores. `204` · `422 validation_failed` ·
+`503 account_lookup_unavailable` (`POST` on a stopped online-mode server).
 
 ### `POST` / `DELETE /servers/{id}/players/bans` — auth + CSRF
 Body `{"name", "reason"}` (`reason` optional, at most 200 characters, one line, ignored by
@@ -479,6 +482,14 @@ Body `{"name", "reason"}` (`reason` optional, at most 200 characters, one line, 
 
 ### `POST` / `DELETE /servers/{id}/players/ip-bans` — auth + CSRF
 Body `{"ip", "reason"}` (IPv4 or IPv6; `reason` as above). `204` · `422 validation_failed`.
+
+### `GET /players/{uuid}/avatar` — auth
+Face of the account's skin (8×8 PNG, hat layer included) for the player lists; the UUID may
+have hyphens or not. The panel fetches the profile from `sessionserver.mojang.com` and the
+skin from `textures.minecraft.net` only. `200 image/png` with `Cache-Control: private,
+max-age=86400` · `404 not_found` (no account, no custom skin, or an offline-mode UUID, which
+is answered without contacting Mojang) · `422 validation_failed` (field `uuid`) ·
+`503 account_lookup_unavailable`.
 
 ## WebSocket
 

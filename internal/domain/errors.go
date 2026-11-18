@@ -21,6 +21,9 @@ var (
 
 	ErrInstallerUnavailable = errors.New("version source unavailable")
 
+	ErrPlayerNotFound           = errors.New("no Minecraft account has this name")
+	ErrAccountLookupUnavailable = errors.New("Mojang account lookup unavailable")
+
 	ErrFileExists          = errors.New("file already exists")
 	ErrNotDirectory        = errors.New("not a directory")
 	ErrIsDirectory         = errors.New("is a directory")

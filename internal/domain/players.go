@@ -89,6 +89,25 @@ func OfflineUUID(name string) string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", h[0:4], h[4:6], h[6:8], h[8:10], h[10:16])
 }
 
+var uuidHexRE = regexp.MustCompile(`^[0-9a-f]{32}$`)
+
+// ParseUUID accepts a player UUID with or without hyphens and returns its canonical
+// lowercase hyphenated form.
+func ParseUUID(s string) (string, error) {
+	h := strings.ToLower(s)
+	if len(h) == 36 && h[8] == '-' && h[13] == '-' && h[18] == '-' && h[23] == '-' {
+		h = strings.ReplaceAll(h, "-", "")
+	}
+	if !uuidHexRE.MatchString(h) {
+		return "", &ValidationError{Field: "uuid", Message: "not a valid UUID"}
+	}
+	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32], nil
+}
+
+// IsOfflineUUID reports whether a canonical UUID is a version 3 (offline-mode) UUID, which
+// has no Mojang account behind it.
+func IsOfflineUUID(uuid string) bool { return len(uuid) == 36 && uuid[14] == '3' }
+
 // BanTimestamp formats a time the way Minecraft writes "created" in its ban lists.
 func BanTimestamp(t time.Time) string { return t.UTC().Format("2006-01-02 15:04:05 -0700") }
 
