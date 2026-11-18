@@ -8,7 +8,7 @@ import { clearFormError, field, formValues, h, showFormError, toast } from '../d
 import { bytes, percent } from '../format.js';
 import { mountModpackManager } from '../modpack-manager.js';
 import { detectModpack } from '../modpack-zip.js';
-import { ACTIONS, ACTIVE, CREATING_POLL_MS, LOADERS, STATUS, confirmAction, gameVersion, lifecycleActions, runAction } from '../server-actions.js';
+import { ACTIONS, ACTIVE, CREATING_POLL_MS, LOADERS, STATUS, confirmAction, gameVersion, lifecycleActions, limitFields, runAction } from '../server-actions.js';
 
 const REFRESH_MS = 3000;
 const EULA_URL = 'https://aka.ms/MinecraftEULA';
@@ -162,13 +162,6 @@ export function mount(root) {
     const deleted = await act(s, 'delete', 'Deleting…',
       () => api('DELETE', `/servers/${s.id}${ok.checked ? '?delete_files=true' : ''}`));
     if (deleted) toast(`${s.name} deleted.`, 'success');
-  }
-
-  function limitFields(s) {
-    return [
-      field('Memory (MB)', h('input', { class: 'input', name: 'memory_mb', type: 'number', min: '512', max: '16384', step: '256', required: true, value: String(s?.memory_mb ?? 2048) })),
-      field('CPU cores', h('input', { class: 'input', name: 'cpu_cores', type: 'number', min: '0.5', step: '0.5', required: true, value: String(s?.cpu_cores ?? 2) })),
-    ];
   }
 
   // submitForm wires a dialog form: disables the button while sending, shows API errors inline.

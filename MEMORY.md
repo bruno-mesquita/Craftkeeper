@@ -331,3 +331,14 @@ Plano: `~/.claude/plans/preciso-agora-que-tudo-cuddly-widget.md`.
 **Aceite (spec §17):** compila para linux/amd64; roda sem Go; frontend servido pelo Go;
 admin consegue logar; banco persiste após restart; Crafty continua operando (verificar com
 `docker ps` com autorização do usuário, sem tocar nos containers).
+
+## Aba Resources — RAM/CPU na página do servidor (2026-11-18)
+
+Plano: `~/.claude/plans/preciso-que-faca-o-fuzzy-haven.md`.
+- **Implementado (só frontend):** aba "Resources" em `#/servers/{id}`
+  (`web/assets/js/resources-manager.js`), usando o `PATCH /servers/{id}` existente (sem mudança
+  de API). Editável só com status `stopped` (política da Fase 3); nos outros estados, campos
+  desabilitados + nota. Salvar atualiza o cabeçalho. `limitFields` movido para
+  `server-actions.js` (compartilhado com os diálogos de criar/editar da lista). Sem CSS novo.
+- **Testado:** `sudo make check` passou (2026-11-18; binário 13,7 MB); sintaxe JS com `node --check`.
+- **Verificado de verdade (usuário, 2026-11-18):** teste manual da aba no navegador.

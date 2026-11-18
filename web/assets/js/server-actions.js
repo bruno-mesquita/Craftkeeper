@@ -1,7 +1,8 @@
-// Server status labels, game version labels and lifecycle actions shared by the server list
-// and detail pages.
+// Server status labels, game version labels, lifecycle actions and limit fields shared by the
+// server list and detail pages.
 import { api } from './api.js';
 import { confirmDialog } from './dialog.js';
+import { field, h } from './dom.js';
 
 export const STATUS = {
   running: { label: 'Running', tone: 'text-success border-success/40' },
@@ -59,4 +60,13 @@ export async function confirmAction(s, action) {
 // runAction performs a lifecycle action and resolves to the updated server.
 export function runAction(s, action) {
   return api('POST', `/servers/${s.id}/${action}`);
+}
+
+// limitFields returns the memory and CPU form fields (bounds as in docs/API.md), filled with the
+// server's current limits or the creation defaults.
+export function limitFields(s) {
+  return [
+    field('Memory (MB)', h('input', { class: 'input', name: 'memory_mb', type: 'number', min: '512', max: '16384', step: '256', required: true, value: String(s?.memory_mb ?? 2048) })),
+    field('CPU cores', h('input', { class: 'input', name: 'cpu_cores', type: 'number', min: '0.5', step: '0.5', required: true, value: String(s?.cpu_cores ?? 2) })),
+  ];
 }

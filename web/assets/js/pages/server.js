@@ -1,7 +1,6 @@
 // Server page: header with live status and lifecycle actions, then tabs: the live console
-// (WebSocket channel server:<id>, docs/WEBSOCKET.md), the file manager, backups, players and
-// the server.properties form. Usage is
-// polled over REST.
+// (WebSocket channel server:<id>, docs/WEBSOCKET.md), the file manager, backups, players, the
+// server.properties form and the memory/CPU limits. Usage is polled over REST.
 import { api, ApiError } from '../api.js';
 import { h, toast } from '../dom.js';
 import { bytes, percent } from '../format.js';
@@ -9,6 +8,7 @@ import { mountBackupManager } from '../backup-manager.js';
 import { mountFileManager } from '../file-manager.js';
 import { mountPlayerManager } from '../player-manager.js';
 import { mountPropertiesManager } from '../properties-manager.js';
+import { mountResourcesManager } from '../resources-manager.js';
 import { ACTIONS, ACTIVE, STATUS, confirmAction, gameVersion, lifecycleActions, runAction } from '../server-actions.js';
 import * as ws from '../ws.js';
 
@@ -71,6 +71,8 @@ export function mount(root, { param: id }) {
   let players = null; // player manager, mounted on first use
   const propertiesPanel = h('section', { class: 'card', id: 'panel-properties', role: 'tabpanel', 'aria-labelledby': 'tab-properties', hidden: true });
   let properties = null; // server.properties form, mounted on first use
+  const resourcesPanel = h('section', { class: 'card', id: 'panel-resources', role: 'tabpanel', 'aria-labelledby': 'tab-resources', hidden: true });
+  let resources = null; // memory/CPU limits form, mounted on first use
 
   const tabButtons = {
     console: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-console', 'aria-controls': 'panel-console' }, 'Console'),
@@ -78,8 +80,9 @@ export function mount(root, { param: id }) {
     backups: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-backups', 'aria-controls': 'panel-backups' }, 'Backups'),
     players: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-players', 'aria-controls': 'panel-players' }, 'Players'),
     properties: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-properties', 'aria-controls': 'panel-properties' }, 'Properties'),
+    resources: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-resources', 'aria-controls': 'panel-resources' }, 'Resources'),
   };
-  const panels = { console: consolePanel, files: filesPanel, backups: backupsPanel, players: playersPanel, properties: propertiesPanel };
+  const panels = { console: consolePanel, files: filesPanel, backups: backupsPanel, players: playersPanel, properties: propertiesPanel, resources: resourcesPanel };
 
   function showTab(name) {
     for (const [n, b] of Object.entries(tabButtons)) {
@@ -105,6 +108,10 @@ export function mount(root, { param: id }) {
       properties.setRunning(Boolean(server && ACTIVE.has(server.status)));
     } else if (name === 'properties') {
       properties.refresh();
+    }
+    if (name === 'resources' && !resources) {
+      resources = mountResourcesManager(resourcesPanel, { id, onSaved: (view) => { server = view; renderHeader(); } });
+      if (server) resources.setServer(server);
     }
     if (name === 'backups') {
       if (!backups) {
@@ -140,7 +147,8 @@ export function mount(root, { param: id }) {
     filesPanel,
     backupsPanel,
     playersPanel,
-    propertiesPanel);
+    propertiesPanel,
+    resourcesPanel);
   showTab('console');
 
   // --- header -------------------------------------------------------------------------
@@ -165,6 +173,7 @@ export function mount(root, { param: id }) {
     backups?.setRunning(ACTIVE.has(server.status));
     players?.setRunning(ACTIVE.has(server.status));
     properties?.setRunning(ACTIVE.has(server.status));
+    resources?.setServer(server);
   }
 
   async function act(action) {
@@ -195,6 +204,7 @@ export function mount(root, { param: id }) {
         backupsPanel.hidden = true;
         playersPanel.hidden = true;
         propertiesPanel.hidden = true;
+        resourcesPanel.hidden = true;
         return;
       }
       notice.hidden = false;
