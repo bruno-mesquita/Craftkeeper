@@ -53,6 +53,8 @@ var errSaveTimeout = errors.New("backups: the game did not confirm saving in tim
 const (
 	opBackup  = "backup"
 	opRestore = "restore"
+	// opProtect is a change made right after a backup of the stopped server (Protect).
+	opProtect = "protect"
 )
 
 type Service struct {
@@ -75,7 +77,7 @@ type Service struct {
 	cancel context.CancelFunc
 
 	mu     sync.Mutex
-	busy   map[string]string // server ID → opBackup or opRestore
+	busy   map[string]string // server ID → opBackup, opRestore or opProtect
 	closed bool
 	wg     sync.WaitGroup // backup jobs
 }
@@ -121,7 +123,7 @@ func (s *Service) acquire(serverID, op string) error {
 		return domain.ErrBackupInProgress
 	}
 	s.busy[serverID] = op
-	if op == opBackup {
+	if op == opBackup || op == opProtect {
 		s.wg.Add(1)
 	}
 	return nil
@@ -210,7 +212,11 @@ func (s *Service) checkSpace(serverID string) error {
 func (s *Service) run(b domain.Backup, serverName string, actor servers.Actor) {
 	defer s.wg.Done()
 	defer s.release(b.ServerID)
+	s.complete(b, serverName, actor)
+}
 
+// complete writes backup b, stores and audits the outcome and reports whether it succeeded.
+func (s *Service) complete(b domain.Backup, serverName string, actor servers.Actor) (domain.Backup, bool) {
 	size, err := s.write(s.ctx, b)
 	ctx := context.WithoutCancel(s.ctx)
 	b.CompletedAt = s.now().UTC().Truncate(time.Second)
@@ -234,6 +240,48 @@ func (s *Service) run(b domain.Backup, serverName string, actor servers.Actor) {
 	if ok && b.Kind == domain.BackupScheduled {
 		s.prune(ctx, b.ServerID, serverName)
 	}
+	return b, ok
+}
+
+// Protect makes a full backup of a stopped server, then calls change while still holding the
+// server, so no other backup or restore can interleave. The backup is a manual one (never
+// pruned) and stays whatever change does. change does not run if the backup failed
+// (ErrBackupFailed) or ctx was cancelled meanwhile; it must itself make sure the server is
+// still stopped, as a start is not prevented.
+func (s *Service) Protect(ctx context.Context, serverID string, actor servers.Actor, change func(ctx context.Context) error) error {
+	view, err := s.servers.Get(ctx, serverID)
+	if err != nil {
+		return err
+	}
+	if online, err := backupMode(view.Status); err != nil {
+		return err
+	} else if online {
+		return domain.ErrServerRunning
+	}
+	if err := s.checkSpace(serverID); err != nil {
+		return err
+	}
+	if err := s.acquire(serverID, opProtect); err != nil {
+		return err
+	}
+	defer s.release(serverID)
+	b := domain.Backup{ID: rand.Text(), ServerID: serverID, Kind: domain.BackupManual, Status: domain.BackupCreating,
+		CreatedAt: s.now().UTC().Truncate(time.Second)}
+	if err := s.repo.Create(ctx, b); err != nil {
+		s.wg.Done()
+		return err
+	}
+	b, ok := s.complete(b, view.Name, actor)
+	s.wg.Done() // Close waits for the backup, not for the change
+	switch {
+	case !ok && b.Failure != "":
+		return fmt.Errorf("%w: %s", domain.ErrBackupFailed, b.Failure)
+	case !ok:
+		return domain.ErrBackupFailed
+	case ctx.Err() != nil:
+		return ctx.Err()
+	}
+	return change(ctx)
 }
 
 // write waits for the archive slot, then archives the server: online (saving paused) if it

@@ -8,6 +8,7 @@ import { clearFormError, field, formValues, h, showFormError, toast } from '../d
 import { bytes, percent } from '../format.js';
 import { serverIcon } from '../icon-manager.js';
 import { mountModpackManager } from '../modpack-manager.js';
+import { versionFields } from '../version-fields.js';
 import { detectModpack } from '../modpack-zip.js';
 import { ACTIONS, ACTIVE, CREATING_POLL_MS, LOADERS, STATUS, confirmAction, gameVersion, lifecycleActions, limitFields, runAction } from '../server-actions.js';
 
@@ -190,25 +191,24 @@ export function mount(root) {
   function createDialog() {
     const button = h('button', { class: 'btn btn-primary', type: 'submit' }, 'Create');
     const cancel = h('button', { class: 'btn btn-ghost', type: 'button' }, 'Cancel');
-    const loader = h('select', { class: 'input', name: 'loader' },
-      Object.entries(LOADERS).map(([value, label]) => h('option', { value }, label)));
-    const versionSlot = h('div');
-    const loaderVersion = h('select', { class: 'input', name: 'loader_version', disabled: true });
-    const loaderVersionField = field('Loader version', loaderVersion);
-    loaderVersionField.hidden = true;
-    const versionStatus = h('p', { class: 'text-xs text-muted', role: 'status', hidden: true });
-    const moddedHint = h('p', { class: 'text-xs text-muted', hidden: true },
-      'Mod loaders need more memory (4 GB or more for most modpacks). Forge and NeoForge install on the first start, which takes a few minutes. Add mods to the mods folder in the Files tab.');
     const limits = limitFields();
     const memory = limits[0].querySelector('input');
     const packInput = h('input', { class: 'input', name: 'modpack', type: 'file', accept: '.zip,application/zip' });
     const packField = field('Modpack server pack ZIP (optional)', packInput);
     const packStatus = h('p', { class: 'text-xs text-muted', role: 'status', hidden: true });
+    let detected = null; // what the chosen pack's variables.txt declares
+    const moddedHint = h('p', { class: 'text-xs text-muted', hidden: true },
+      'Mod loaders need more memory (4 GB or more for most modpacks). Forge and NeoForge install on the first start, which takes a few minutes. Add mods to the mods folder in the Files tab.');
+    const versions = versionFields({
+      onBusy: (busy) => { if (!detected) button.disabled = busy; },
+      onLoader: (kind) => {
+        const modded = kind !== 'vanilla';
+        moddedHint.hidden = !modded;
+        if (modded && Number(memory.value) < 4096) memory.value = '4096';
+      },
+    });
     // Type and version fields: replaced by what the pack's variables.txt declares.
-    const manual = h('div', { class: 'flex flex-col gap-4' },
-      h('div', { class: 'grid grid-cols-2 gap-4' }, field('Server type', loader), versionSlot),
-      loaderVersionField, versionStatus, moddedHint);
-    let detected = null;
+    const manual = h('div', { class: 'flex flex-col gap-4' }, versions.root, moddedHint);
     const form = h('form', { class: 'flex flex-col gap-4', novalidate: true },
       field('Name', h('input', { class: 'input', name: 'name', required: true, maxlength: '48', autocomplete: 'off' })),
       field('Description', h('input', { class: 'input', name: 'description', maxlength: '500', autocomplete: 'off' })),
@@ -226,72 +226,6 @@ export function mount(root) {
       h('p', { class: 'form-error', 'data-error': true, role: 'alert', hidden: true }),
       h('div', { class: 'flex justify-end gap-2' }, cancel, button));
 
-    // Version lists come from the official sources through the panel. Each change bumps
-    // `request`, so a slow answer for a previous choice is ignored.
-    let request = 0;
-    const setStatus = (text) => {
-      versionStatus.textContent = text;
-      versionStatus.hidden = !text;
-    };
-    const options = (select, values, label = (v) => v) =>
-      select.replaceChildren(...values.map((v) => h('option', { value: v }, label(v))));
-
-    async function loadVersions() {
-      const id = ++request;
-      const kind = loader.value;
-      const modded = kind !== 'vanilla';
-      moddedHint.hidden = !modded;
-      if (modded && Number(memory.value) < 4096) memory.value = '4096';
-      loaderVersionField.hidden = !modded;
-      loaderVersion.disabled = true;
-      button.disabled = true;
-      setStatus('Loading versions…');
-      try {
-        const { versions } = await api('GET', `/installers/${kind}/versions`);
-        if (id !== request) return;
-        const select = h('select', { class: 'input', name: 'version' });
-        options(select, versions, (v) => (v === 'LATEST' ? 'Latest release (updates on restart)' : v));
-        if (modded) select.addEventListener('change', () => loadLoaderVersions(select.value));
-        versionSlot.replaceChildren(field('Minecraft version', select));
-        if (modded) {
-          if (!versions.length) throw new Error(`No ${LOADERS[kind]} versions are available.`);
-          await loadLoaderVersions(select.value, id);
-        } else {
-          setStatus('');
-          button.disabled = false;
-        }
-      } catch (err) {
-        if (id !== request) return;
-        if (modded) {
-          versionSlot.replaceChildren();
-          setStatus(`Could not load ${LOADERS[kind]} versions: ${err.message}`);
-          return;
-        }
-        // Vanilla does not need the list: the game image resolves the version itself.
-        versionSlot.replaceChildren(field('Minecraft version',
-          h('input', { class: 'input', name: 'version', value: 'LATEST', required: true, autocomplete: 'off' })));
-        setStatus('The version list is unavailable; type "LATEST" or a release such as 1.21.4.');
-        button.disabled = false;
-      }
-    }
-
-    async function loadLoaderVersions(mc, id = ++request) {
-      loaderVersion.disabled = true;
-      button.disabled = true;
-      setStatus('Loading loader versions…');
-      try {
-        const lv = await api('GET', `/installers/${loader.value}/versions/${encodeURIComponent(mc)}`);
-        if (id !== request) return;
-        options(loaderVersion, lv.loader_versions, (v) => (v === lv.recommended ? `${v} (recommended)` : v));
-        loaderVersion.value = lv.recommended;
-        loaderVersion.disabled = false;
-        button.disabled = false;
-        setStatus('');
-      } catch (err) {
-        if (id === request) setStatus(`Could not load loader versions: ${err.message}`);
-      }
-    }
-
     packInput.addEventListener('change', async () => {
       const pack = packInput.files?.[0];
       detected = pack ? await detectModpack(pack) : null;
@@ -307,8 +241,6 @@ export function mount(root) {
         packStatus.textContent = 'No usable variables.txt in the ZIP: choose the server type and Minecraft version below.';
       }
     });
-    loader.addEventListener('change', loadVersions);
-    loadVersions();
 
     let closed = false;
     let pollTimer = null;

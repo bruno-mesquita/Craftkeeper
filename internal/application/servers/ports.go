@@ -38,6 +38,9 @@ type ContainerRuntime interface {
 	Restart(ctx context.Context, id, serverID string) error
 	Kill(ctx context.Context, id, serverID string) error
 	Remove(ctx context.Context, id, serverID string) error
+	// RenameReplaced moves a container to its "-replaced" name, freeing the normal one for a
+	// new container, or back (replaced false).
+	RenameReplaced(ctx context.Context, id, serverID string, replaced bool) error
 	UpdateLimits(ctx context.Context, id, serverID string, memoryMB, cpuMillicores int) error
 }
 
@@ -51,6 +54,7 @@ type Installers interface {
 // DataDirs owns the per-server data directories.
 type DataDirs interface {
 	Create(id string) (string, error)
+	Path(id string) (string, error)
 	Remove(id string) error
 	Archive(id string) error
 }

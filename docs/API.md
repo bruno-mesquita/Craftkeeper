@@ -33,17 +33,20 @@ unless marked *planned*.
 | 403 | `setup_token_invalid` | Wrong setup token |
 | 404 | `not_found` | Unknown endpoint or resource |
 | 409 | `setup_completed` | Setup already done |
-| 409 | `server_running` | The server must be stopped (memory/CPU limits, restore) |
+| 409 | `server_running` | The server must be stopped (memory/CPU limits, restore, version change, world reset/import) |
 | 409 | `server_busy` | The server is being created, starting or restarting; retry shortly |
 | 409 | `backup_in_progress` | A backup or restore of this server is in progress |
 | 409 | `backup_not_ready` | The backup is still being made, or failed |
 | 409 | `container_missing` | The server's container no longer exists; only deletion works |
 | 409 | `container_not_managed` | The container no longer carries this server's labels; the panel refuses to touch it |
 | 409 | `port_in_use` | The game port is taken on the host when starting |
+| 409 | `modpack_server` | The server runs a modpack, whose scripts choose the game version |
 | 413 | `payload_too_large` | Body over 64 KiB |
 | 422 | `validation_failed` | Field-level validation error |
+| 422 | `invalid_world` | The archive holds no Minecraft world (`level.dat`) |
 | 429 | `rate_limited` | Too many failed logins; retry after the window |
 | 500 | `internal_error` | Unexpected server error (details only in logs) |
+| 500 | `backup_failed` | The automatic backup before a version change or world reset/import failed; nothing was changed |
 | 502 | `docker_error` | Docker rejected the operation (details only in logs) |
 | 503 | `docker_unavailable` | The Docker daemon cannot be reached |
 | 503 | `installer_unavailable` | An official version source (Mojang, Fabric, Forge, NeoForge) cannot be reached |
@@ -172,7 +175,7 @@ server). `server_name` is the server's **current** name, `null` once it is delet
 Audit actions: `auth.setup`, `auth.login`, `auth.logout`, `auth.password_change`,
 `server.create`, `server.update`, `server.start`, `server.stop`, `server.restart`,
 `server.kill`, `server.delete` (target: server name), `server.crash_loop` (no user; see
-Servers), `server.console_command` (target: the command typed in the console, at most 200
+Servers), `server.version_change`, `world.reset`, `world.import` (see World), `server.console_command` (target: the command typed in the console, at most 200
 bytes; commands the panel sends itself for backups and player lists are not recorded as
 console commands), `container.delete`, `modpack.*`, `file.*`, `backup.*`, `whitelist.*`,
 `player.*`, `ip.*` (see their sections).
@@ -480,12 +483,12 @@ when only `retain` changes, the planned run is kept.
 
 ## Players
 
-Whitelist and ban lists of a Minecraft server. The lists are read from the game's files
-(`whitelist.json`, `banned-players.json`, `banned-ips.json`, and `white-list` in
-`server.properties`), so they show what is on disk.
+Whitelist, operators and ban lists of a Minecraft server. The lists are read from the game's
+files (`whitelist.json`, `ops.json`, `banned-players.json`, `banned-ips.json`, and
+`white-list` in `server.properties`), so they show what is on disk.
 
 - **Running (or starting) server:** every change is sent to the game console (`whitelist
-  on|off|add|remove`, `ban`, `pardon`, `ban-ip`, `pardon-ip`), because the running game owns
+  on|off|add|remove`, `op`, `deop`, `ban`, `pardon`, `ban-ip`, `pardon-ip`), because the running game owns
   those files and rewrites them. The game resolves UUIDs; it may write its files a moment
   after the `204`. Only the player action is audited (e.g. `whitelist.add`), not the command.
 - **Stopped server (or missing container):** the files are edited directly. The whitelist
@@ -495,6 +498,8 @@ Whitelist and ban lists of a Minecraft server. The lists are read from the game'
   account is looked up at Mojang (`api.mojang.com`) and stored with Mojang's UUID and name
   spelling. An unknown name is `422 validation_failed` (field `name`); Mojang unreachable or
   rate limiting is `503 account_lookup_unavailable`. Removals and IP bans never need a UUID.
+  A new operator gets the level of `op-permission-level` (1–4, default 4) and
+  `bypassesPlayerLimit: false`, like the game's `op` command.
 - Restarting servers answer `409 server_busy`; without Docker, `503 docker_unavailable`.
 - A list file that is not a valid JSON array is never overwritten: `422 validation_failed`
   (field is the file name).
@@ -502,11 +507,13 @@ Whitelist and ban lists of a Minecraft server. The lists are read from the game'
   case-insensitively.
 
 Audit: `whitelist.toggle` (target `<server name>: on|off`), `whitelist.add`,
-`whitelist.remove`, `player.ban`, `player.pardon`, `ip.ban`, `ip.pardon` (target
+`whitelist.remove`, `player.op`, `player.deop`, `player.ban`, `player.pardon`, `ip.ban`,
+`ip.pardon` (target
 `<server name>: <player name or IP>`).
 
 ### `GET /servers/{id}/players` — auth
-`200 {"whitelist": {"enabled": bool, "players": [{"uuid", "name"}]}, "banned_players":
+`200 {"whitelist": {"enabled": bool, "players": [{"uuid", "name"}]}, "ops": [{"uuid", "name",
+"level": int}], "banned_players":
 [{"uuid", "name", "created", "source", "expires", "reason"}], "banned_ips": [{"ip",
 "created", "source", "expires", "reason"}]}`. `created`, `source` and `expires` are the
 game's own strings (`expires` is `forever` for panel-made bans).
@@ -528,6 +535,10 @@ Body `{"enabled": bool}`. `204`.
 Body `{"name"}`: 1 to 16 letters, digits or underscores. `204` · `422 validation_failed` ·
 `503 account_lookup_unavailable` (`POST` on a stopped online-mode server).
 
+### `POST` / `DELETE /servers/{id}/players/ops` — auth + CSRF
+Body `{"name"}`, as for the whitelist. `204` · `422 validation_failed` ·
+`503 account_lookup_unavailable` (`POST` on a stopped online-mode server).
+
 ### `POST` / `DELETE /servers/{id}/players/bans` — auth + CSRF
 Body `{"name", "reason"}` (`reason` optional, at most 200 characters, one line, ignored by
 `DELETE`). `204` · `422 validation_failed`.
@@ -542,6 +553,50 @@ skin from `textures.minecraft.net` only. `200 image/png` with `Cache-Control: pr
 max-age=86400` · `404 not_found` (no account, no custom skin, or an offline-mode UUID, which
 is answered without contacting Mojang) · `422 validation_failed` (field `uuid`) ·
 `503 account_lookup_unavailable`.
+
+## World
+
+Changes that can lose a world: the game version, resetting the world and importing another.
+Each needs a **stopped** (or crashed) server and starts with a full backup of it, as a manual
+backup (listed under Backups, never removed by retention), so a restore undoes it. Input is
+checked before the backup; the change runs only if the backup succeeded (`500
+backup_failed`, nothing changed) and the server is still stopped afterwards (`409
+server_running`, the backup stays). Backups and restores of the server are refused meanwhile
+(`409 backup_in_progress`). The requests are synchronous and may take minutes on big worlds.
+Other errors: `409 server_running` · `409 server_busy` · `409 backup_in_progress` · `409
+container_missing` · `507 insufficient_storage` (no room for the backup) · `503
+docker_unavailable`.
+
+The world directory is `level-name` from `server.properties` (`world` when unset), a path
+inside the server directory. To download it, use `GET /servers/{id}/files/download?path=<it>`
+(a zip of the folder).
+
+### `POST /servers/{id}/version` — auth + CSRF
+Body `{"loader", "version", "loader_version"}` as in `POST /servers` (`loader_version`
+optional: the recommended build). Replaces the container with one for the new version, with
+the same port, limits and files; the old container is only removed once the new one is
+recorded, and any failure puts it back. Downgrades and loader changes are allowed (the game
+cannot convert a world to an older version, and mods must match the loader: the UI warns).
+A recorded crash loop is cleared. `200` with the server · `409 modpack_server` · `422
+validation_failed` · `503 installer_unavailable`. Audit `server.version_change` (target
+`<server name>: <loader> <version> [<build>] → <loader> <version> [<build>]`).
+
+### `POST /servers/{id}/world/reset` — auth + CSRF
+Body `{"seed"}` (optional; at most 64 characters, one line, no backslash). Deletes the world
+directory; the game generates a new one on the next start. With `seed`, `level-seed` in
+`server.properties` is set to it first (`""` = random); without it the file is untouched.
+`204` · `422 validation_failed` (field `seed`, or `level-name` when it points outside the
+server). Audit `world.reset` (target `<server name>: <world directory>`).
+
+### `POST /servers/{id}/world/import` — auth + CSRF
+Body `{"path"}`: a `.zip` already uploaded to the server directory (`POST
+/files/upload`). The archive holds the world at its root or in one top-level folder (a
+`__MACOSX` folder is ignored); `level.dat` marks it. It is unpacked with the limits of
+`files/extract` into a temporary folder and checked; the archive is deleted, then the server
+is backed up and the world directory replaced. `204` · `422 invalid_world` (the archive and
+the current world are kept) · `422 invalid_archive` · `413 archive_too_large` · `422
+validation_failed` (field `path`). Worlds in the Bukkit layout (separate `world_nether`,
+`world_the_end`) are not supported. Audit `world.import`.
 
 ## WebSocket
 

@@ -16,10 +16,14 @@ import (
 type stubRuntime struct {
 	mu     sync.Mutex
 	states map[string]*domain.ContainerState
-	down   bool // simulate an unreachable daemon
+	envs   map[string][]string // container ID → environment
+	down   bool                // simulate an unreachable daemon
+	n      int
 }
 
-func newStubRuntime() *stubRuntime { return &stubRuntime{states: map[string]*domain.ContainerState{}} }
+func newStubRuntime() *stubRuntime {
+	return &stubRuntime{states: map[string]*domain.ContainerState{}, envs: map[string][]string{}}
+}
 
 func (s *stubRuntime) get(id, serverID string) (*domain.ContainerState, error) {
 	if s.down {
@@ -52,9 +56,18 @@ func (s *stubRuntime) EnsureImage(context.Context, string) error { return nil }
 func (s *stubRuntime) Create(_ context.Context, spec domain.ContainerSpec) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	id := strings.Repeat("f", 63) + string(rune('0'+len(s.states)))
+	s.n++
+	id := strings.Repeat("f", 63) + string(rune('0'+s.n%10))
 	s.states[id] = &domain.ContainerState{ID: id, ServerID: spec.ServerID, State: "created"}
+	s.envs[id] = spec.Env
 	return id, nil
+}
+
+func (s *stubRuntime) RenameReplaced(_ context.Context, id, serverID string, _ bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.get(id, serverID)
+	return err
 }
 
 func (s *stubRuntime) Inspect(_ context.Context, id, serverID string) (domain.ContainerState, error) {

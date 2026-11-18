@@ -1,5 +1,5 @@
 // Players of one server (docs/API.md, "Players"): who is online (asked to the running game),
-// the whitelist with its on/off switch, banned players and banned IPs. A running server applies changes through its console; a stopped
+// the whitelist with its on/off switch, operators, banned players and banned IPs. A running server applies changes through its console; a stopped
 // one has its files edited. The lists always show what is on disk.
 import { api } from './api.js';
 import { confirmDialog } from './dialog.js';
@@ -106,6 +106,23 @@ export function mountPlayerManager(root, { id }) {
     onAdd: ({ name }) => api('POST', `${base}/whitelist`, { name }),
     onRemove: (p) => send('DELETE', 'whitelist', { name: p.name }, `${p.name} removed from the whitelist.`),
   });
+  const ops = section({
+    title: 'Operators',
+    hint: 'Operators can run commands in the game. New ones get the level set by op-permission-level (default 4, every command).',
+    addLabel: 'Make operator', empty: 'No operators.', rowLabel: 'Remove',
+    inputs: [{ name: 'name', label: 'Player name', placeholder: 'Player name', required: true }],
+    details: (o) => [
+      h('p', { class: 'flex items-center gap-2 font-medium' },
+        h('span', { class: 'truncate' }, o.name),
+        h('span', {
+          class: 'badge whitespace-nowrap text-success border-success/40', hidden: true,
+          'data-online': '', 'data-uuid': o.uuid, 'data-name': o.name.toLowerCase(),
+        }, 'Online')),
+      h('p', { class: 'truncate text-xs text-muted' }, `Level ${o.level}`),
+    ],
+    onAdd: ({ name }) => api('POST', `${base}/ops`, { name }),
+    onRemove: (o) => send('DELETE', 'ops', { name: o.name }, `${o.name} is no longer an operator.`),
+  });
   const bans = section({
     title: 'Banned players', addLabel: 'Ban', empty: 'No banned players.', rowLabel: 'Unban',
     inputs: [
@@ -191,7 +208,7 @@ export function mountPlayerManager(root, { id }) {
           h('p', { class: 'text-xs text-muted' }, 'Only the players below can join while it is on.'))),
       h('button', { class: 'btn btn-ghost', type: 'button', onclick: () => { load(); pollOnline(); } }, 'Refresh')),
     note,
-    whitelist.el, bans.el, ipBans.el,
+    whitelist.el, ops.el, bans.el, ipBans.el,
     status);
 
   async function load() {
@@ -202,6 +219,7 @@ export function mountPlayerManager(root, { id }) {
       toggle.setAttribute('aria-checked', String(out.whitelist.enabled));
       toggle.disabled = false;
       whitelist.render(out.whitelist.players);
+      ops.render(out.ops);
       bans.render(out.banned_players);
       ipBans.render(out.banned_ips);
       status.textContent = '';

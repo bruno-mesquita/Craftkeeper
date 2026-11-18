@@ -69,6 +69,41 @@ func (d *lifecycleDaemon) sent(key string) bool {
 	return false
 }
 
+func TestRenameReplaced(t *testing.T) {
+	ctx := context.Background()
+	base := "/containers/" + idRunning
+	named := func(name string, labels map[string]string) string {
+		b, _ := json.Marshal(map[string]any{"Id": idRunning, "Name": "/" + name, "State": map[string]any{"Status": "exited"},
+			"Config": map[string]any{"Labels": labels}})
+		return string(b)
+	}
+
+	r, d := newRuntime(t)
+	d.on("GET "+base+"/json", http.StatusOK, named(ContainerName(serverID), ours()))
+	d.on("POST "+base+"/rename", http.StatusNoContent, "")
+	if err := r.RenameReplaced(ctx, idRunning, serverID, true); err != nil {
+		t.Fatal(err)
+	}
+	if q := d.queries["POST "+base+"/rename"]; q != "name="+ContainerName(serverID)+"-replaced" {
+		t.Fatalf("rename query = %q", q)
+	}
+
+	// Already named as wanted: nothing sent.
+	r, d = newRuntime(t)
+	d.on("GET "+base+"/json", http.StatusOK, named(ContainerName(serverID), ours()))
+	if err := r.RenameReplaced(ctx, idRunning, serverID, false); err != nil || d.sent("POST "+base+"/rename") {
+		t.Fatalf("no-op rename: err %v", err)
+	}
+
+	// Another server's container is never renamed.
+	r, d = newRuntime(t)
+	d.on("GET "+base+"/json", http.StatusOK, named("x", map[string]string{LabelManaged: "true", LabelServerID: "ZZZZZZZZZZZZZZZZZZZZZZZZZZ"}))
+	d.on("POST "+base+"/rename", http.StatusNoContent, "")
+	if err := r.RenameReplaced(ctx, idRunning, serverID, true); !errors.Is(err, domain.ErrNotManaged) || d.sent("POST "+base+"/rename") {
+		t.Fatalf("foreign container: err %v", err)
+	}
+}
+
 func inspectJSON(id, state string, labels map[string]string) string {
 	b, _ := json.Marshal(map[string]any{"Id": id, "State": map[string]any{"Status": state}, "Config": map[string]any{"Labels": labels}})
 	return string(b)

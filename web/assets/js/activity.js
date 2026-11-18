@@ -10,9 +10,10 @@ const GROUPS = [
   ['Server', {
     'server.create': 'Server created', 'server.update': 'Server edited', 'server.start': 'Start', 'server.stop': 'Stop',
     'server.restart': 'Restart', 'server.kill': 'Kill', 'server.delete': 'Server deleted', 'server.crash_loop': 'Stopped after crashes',
-    'container.delete': 'Orphan container removed',
+    'server.version_change': 'Version changed', 'container.delete': 'Orphan container removed',
   }],
   ['Console', { 'server.console_command': 'Console command' }],
+  ['World', { 'world.reset': 'World reset', 'world.import': 'World imported' }],
   ['Files', {
     'file.upload': 'Upload', 'file.write': 'File edited', 'file.mkdir': 'Folder created', 'file.rename': 'Rename',
     'file.delete': 'Delete', 'file.extract': 'Extract', 'modpack.configure': 'Modpack configured', 'modpack.install': 'Modpack install',
@@ -21,6 +22,7 @@ const GROUPS = [
   ['Players', {
     'whitelist.toggle': 'Whitelist on/off', 'whitelist.add': 'Whitelist add', 'whitelist.remove': 'Whitelist remove',
     'player.ban': 'Ban', 'player.pardon': 'Pardon', 'ip.ban': 'IP ban', 'ip.pardon': 'IP pardon',
+    'player.op': 'Op', 'player.deop': 'Deop',
   }],
 ];
 const LABELS = Object.assign({}, ...GROUPS.map(([, actions]) => actions));

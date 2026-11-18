@@ -74,6 +74,9 @@ type Service struct {
 	jobsMu sync.Mutex
 	jobs   map[string]*createJob
 
+	// Servers whose container is being replaced (ChangeVersion); guarded by jobsMu.
+	replacing map[string]bool
+
 	// Automatic restarts seen per server, for crash loop detection (crashguard.go).
 	crashMu sync.Mutex
 	crashes map[string]*restartTrack
@@ -91,7 +94,7 @@ func NewService(repo ServerRepository, runtime ContainerRuntime, dirs DataDirs, 
 	audit AuditRecorder, cfg Config) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Service{repo: repo, runtime: runtime, dirs: dirs, installers: installers, audit: audit, cfg: cfg, now: time.Now,
-		jobs: map[string]*createJob{}, crashes: map[string]*restartTrack{}, ctx: ctx, cancel: cancel}
+		jobs: map[string]*createJob{}, replacing: map[string]bool{}, crashes: map[string]*restartTrack{}, ctx: ctx, cancel: cancel}
 }
 
 // Create validates the input, pins the loader build, assigns a port and records the server,
@@ -218,8 +221,15 @@ func (s *Service) pending(x domain.Server) (View, bool) {
 	return View{Server: x, Status: domain.StatusCreateFailed, Failure: j.failure}, true
 }
 
-// checkBuilt refuses to act on a server that has no container yet.
+// checkBuilt refuses to act on a server that has no container yet, or whose container is
+// being replaced.
 func (s *Service) checkBuilt(x domain.Server) error {
+	s.jobsMu.Lock()
+	replacing := s.replacing[x.ID]
+	s.jobsMu.Unlock()
+	if replacing {
+		return fmt.Errorf("%w: the server's version is being changed", domain.ErrServerBusy)
+	}
 	v, ok := s.pending(x)
 	switch {
 	case !ok:
@@ -232,14 +242,18 @@ func (s *Service) checkBuilt(x domain.Server) error {
 
 // Recover runs before serving. A server without a container is a creation that a previous
 // run did not finish, or that failed: its record and directory are removed. A container
-// created just before the panel stopped becomes an orphan (DeleteOrphanContainer).
+// created just before the panel stopped becomes an orphan (DeleteOrphanContainer). A second
+// container of a registered server is what an interrupted version change left behind
+// (ChangeVersion): it is removed, best effort, since Docker may still be down.
 func (s *Service) Recover(ctx context.Context) error {
 	list, err := s.repo.List(ctx)
 	if err != nil {
 		return err
 	}
+	recorded := make(map[string]string, len(list)) // server ID → its container ID
 	for _, x := range list {
 		if x.ContainerID != "" {
+			recorded[x.ID] = x.ContainerID
 			continue
 		}
 		if err := s.dirs.Remove(x.ID); err != nil {
@@ -247,6 +261,15 @@ func (s *Service) Recover(ctx context.Context) error {
 		}
 		if err := s.repo.Delete(ctx, x.ID); err != nil {
 			return err
+		}
+	}
+	states, err := s.runtime.States(ctx)
+	if err != nil {
+		return nil
+	}
+	for _, st := range states {
+		if cid, ok := recorded[st.ServerID]; ok && cid != st.ID {
+			_ = s.runtime.Remove(ctx, st.ID, st.ServerID)
 		}
 	}
 	return nil
@@ -496,6 +519,12 @@ func (s *Service) Delete(ctx context.Context, id string, deleteFiles bool, actor
 	// A failed creation has nothing left but its record; one in progress must finish first.
 	if v, ok := s.pending(x); ok && v.Status == domain.StatusCreating {
 		return fmt.Errorf("%w: the server is being created", domain.ErrServerBusy)
+	}
+	s.jobsMu.Lock()
+	replacing := s.replacing[x.ID]
+	s.jobsMu.Unlock()
+	if replacing {
+		return fmt.Errorf("%w: the server's version is being changed", domain.ErrServerBusy)
 	}
 	err = s.deleteContainer(ctx, x)
 	if err == nil {

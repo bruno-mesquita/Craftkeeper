@@ -87,6 +87,10 @@ Formato: decisão — motivo — consequência.
 - **D57 · `audit_log.server_id`** (Fase 9, 2026-11-18) — o target usava o nome (muda, pode conter `": "`). — Migration `0006_audit_server` (coluna + índice `(server_id, id)`, sem FK: histórico de servidor apagado fica; sem backfill, eventos antigos só na página global). Leitura com `LEFT JOIN users`/`servers` (username, nome atual ou nulo). `GET /api/v1/audit` com filtros `server_id`/`action`/`failed`/`before`/`limit` (keyset, ≤ 200); `application/activity` valida. `Recent` removido (dashboard usa `List`).
 - **D58 · `server.console_command` com target = só o comando; comandos do painel não são auditados como console** — o ↑ não pode trazer `save-off` de volta e cada intenção = uma linha no audit. — `console.Service.Send` (sem audit) para backups/players; `SendCommand` (auditado) só para o WS. Histórico ↑/↓ = `GET /audit?server_id&action=server.console_command&limit=200` (sucesso + com usuário, dedup, ≤ 50).
 - **D59 · Logs antigos lidos no navegador** (mesmo raciocínio da D49/D52) — lista `logs/` e baixa via API de arquivos; `.gz` por `DecompressionStream`, streaming, mantém as últimas 20 000 linhas e para em 64 Mi caracteres. Lista relida a cada mudança de status (rotação no start). Busca = filtro case-insensitive por substring (live e arquivo).
+- **D60 · Troca de versão recria o container** (Fase 11, escolhas do usuário 2026-11-18: downgrade permitido com aviso; qualquer troca de loader) — env `TYPE`/`VERSION`/`*_VERSION` é imutável. `servers.ChangeVersion`: só parado/crashed; marca o servidor ocupado (`replacing`, `checkBuilt` → `409 server_busy`); `Resolve` + `EnsureImage`; renomeia o antigo para `<nome>-replaced` (`docker.RenameReplaced`, nova operação da allowlist com checagem de posse), cria o novo (mesma porta/limites/pasta via `ServerDirs.Path`), `repo.Update` (agora grava loader/version/loader_version, sem migration), reconfere que o antigo segue parado e o remove; qualquer falha desfaz (linha antiga, remove o novo, nome de volta). Limpa crash record. `Recover` remove, best effort, um 2º container de servidor registrado (troca interrompida). Servidor com modpack configurado → `409 modpack_server`.
+- **D61 · Backup automático antes de toda operação destrutiva** (escolha do usuário: sempre) — `backups.Protect(ctx, id, actor, change)`: backup **síncrono** (kind `manual`, nunca podado; sem migration no CHECK de `kind`) reaproveitando `complete` (núcleo extraído do `run`), servidor segurado (`opProtect`) até o fim da mudança — sem backup/restore intercalado. Falha → `500 backup_failed`, nada muda. Request cancelada → backup fica, mudança não roda. `wg` cobre só o backup (Close não espera a mudança). Start não é bloqueado: a mudança reconfere `stopped` (padrão D40).
+- **D62 · `application/maintenance`** — versão, reset e import de mundo: valida o que é barato (input, `level-name`, zip) → `Protect` → reconfere parado → aplica. Mundo = `level-name` do `server.properties` (default `world`, `domain.LevelName` via `CleanServerPath`). Reset apaga a pasta e, com `seed`, grava `level-seed` (com versão, D35). Import: zip já enviado pelo upload existente, extraído (limites D33) em `.mesquita-tmp-world-*` (ignorado pelo backup; `CleanupStale` agora limpa `.mesquita-tmp-*` no topo de cada pasta de servidor), `level.dat` na raiz ou numa única pasta de topo (`__MACOSX` ignorado), senão `422 invalid_world` sem backup; zip apagado depois de extraído. Export = download da pasta pela API de arquivos (só frontend). Layout Bukkit fora do escopo. Requests síncronas, deadline 45 min.
+- **D63 · Operadores pelo padrão da whitelist** — `op`/`deop` pelo console rodando; parado edita `ops.json` (`level` = `op-permission-level`, default 4; `bypassesPlayerLimit=false`). Audit `player.op`/`player.deop`.
 - **D10 · systemd com usuário dedicado `mesquita-panel`** — princípio do menor privilégio. — Precisa estar no grupo `docker` (root-equivalente) a partir da Fase 3; criação do usuário e grupo exige autorização no deploy.
 
 ---
@@ -118,7 +122,9 @@ Formato: decisão — motivo — consequência.
 | 7 | Game installers (Vanilla, Fabric, Forge, NeoForge; Paper/Purpur fora por escolha do usuário) | ✅ implementada, testada e verificada com servidor real (2026-11-17) | ver Fase 7 abaixo |
 | 8 | Pronto para produção (crash loop, HTTPS, deploy) | 🚧 crash loop testado e verificado com servidor real; falta deploy + HTTPS (2026-11-18) | ver Fase 8 abaixo |
 | 9 | Console e eventos (histórico, busca, logs antigos, Activity) | ✅ implementada, testada e verificada (2026-11-18) | ver Fase 9 abaixo |
-| 10–14 | Roadmap pós-Fase 7 (features) | 📋 planejadas (2026-11-18) | ver "Roadmap pós-Fase 7" abaixo |
+| 10 | Tarefas agendadas + webhook Discord | ⏸️ opcional (pulada a pedido do usuário, 2026-11-18) | ver "Roadmap pós-Fase 7" abaixo |
+| 11 | Trocar versão/loader, mundos, operadores | ✅ implementada, testada e verificada (2026-11-18) | ver Fase 11 abaixo |
+| 12–14 | Roadmap pós-Fase 7 (features) | 📋 planejadas (2026-11-18) | ver "Roadmap pós-Fase 7" abaixo |
 
 Legenda de detalhe por feature (preencher ao implementar): **implementado** / **testado** / **planejado**.
 
@@ -336,8 +342,8 @@ subiram um número.
 |---|---|---|---|
 | 8 | 🚧 Produção: detecção de crash/restart loop (Docker events, status `crashed` derivado, último `crash-reports/`); validar Players e modpack com MC real; deploy systemd (D10) + TLS `tailscale serve` | planejada | sudo, grupo docker, systemd |
 | 9 | Console e eventos: histórico de comandos, busca, `logs/*.log.gz`; página Activity + aba por servidor | ✅ concluída | — |
-| 10 | Tarefas agendadas (restart/comando/anúncio; generaliza D42) + webhook Discord (crash, start/stop, backup falho, join/leave via SLP) | planejada | — |
-| 11 | Trocar versão/loader com backup automático; mundos (reset, seed, import/export) + `ops.json` | planejada | — |
+| 10 | Tarefas agendadas (restart/comando/anúncio; generaliza D42) + webhook Discord (crash, start/stop, backup falho, join/leave via SLP) | ⏸️ opcional (pulada a pedido do usuário, 2026-11-18) | — |
+| 11 | Trocar versão/loader com backup automático; mundos (reset, seed, import/export) + `ops.json` | ✅ concluída | — |
 | 12 | Mods via Modrinth (busca por loader/MC, SHA-512, updates, dependências) | planejada | — |
 | 13 | Histórico de métricas (revisa D18; 1 min, 24–48 h, SVG) + página global Backups | planejada | — |
 | 14 | Clonar servidor / templates + status público (ponto de exposição a decidir) | planejada | possivelmente exposição pública |
@@ -426,3 +432,24 @@ audit log por ora (escolha do usuário).
 - `make css` regenerado.
 - **Testado:** `sudo make check` passou (2026-11-18; gofmt, vet, testes, build; binário 13,8 MB).
 - **Verificado de verdade (usuário, 2026-11-18):** roteiro manual do plano feito no navegador.
+
+## Fase 11 — Versão, mundos e operadores (2026-11-18)
+
+Plano: `~/.claude/plans/planeje-a-fase-10-joyful-dolphin.md`. Decisões D60–D63. Fase 10 ficou
+opcional (pulada a pedido do usuário).
+- **Implementado:** `domain/world.go` (`Operator`, `LevelName`, `OpLevel`, `ValidateSeed`,
+  `WorldStagingPrefix`), erros `invalid_world`/`modpack_server`/`backup_failed`, audit
+  `server.version_change`, `world.reset`, `world.import`, `player.op`, `player.deop`;
+  `docker.RenameReplaced`; `sqlite.Servers.Update` com versão; `ServerDirs.Path`;
+  `servers/version.go` (`ChangeVersion`, `ResolveVersion`) + sweep no `Recover`;
+  `backups.Protect`; `application/maintenance`; `players.AddOp/RemoveOp`; rotas
+  `POST /servers/{id}/version`, `/world/reset`, `/world/import`, `POST|DELETE /players/ops`;
+  `main.go`. Frontend: `version-fields.js` (extraído do "New server"), aba **World**
+  (`world-manager.js`: trocar versão com avisos de downgrade/loader, download, reset com seed e
+  confirmação pelo nome, import com upload), seção "Operators" na aba Players, rótulos no
+  Activity; `docs/API.md` (seção World, ops, erros).
+- **Testes escritos:** `servers/version_test.go`, `backups/protect_test.go`,
+  `maintenance/service_test.go`, `domain/world_test.go`, `docker` (`TestRenameReplaced`),
+  `sqlite` (Update com versão), `http/maintenance_test.go` (contratos). JS: `node --check`.
+- **Testado:** `sudo make check` passou (2026-11-18). O 1º run pegou só um bug de teste (`AuditFilter` sem `Limit` devolve vazio).
+- **Verificado de verdade (usuário, 2026-11-18):** funcionou no painel (aba World e Operators).

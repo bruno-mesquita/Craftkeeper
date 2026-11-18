@@ -38,6 +38,10 @@ var (
 	ErrBackupInProgress = errors.New("a backup or restore of this server is in progress")
 	ErrBackupNotReady   = errors.New("backup is not ready")
 	ErrServerBusy       = errors.New("server is starting or restarting")
+	ErrBackupFailed     = errors.New("the automatic backup failed")
+
+	ErrInvalidWorld  = errors.New("the archive does not contain a Minecraft world")
+	ErrModpackServer = errors.New("the server runs a modpack, which sets its own version")
 )
 
 // ValidationError describes which input field is invalid. It wraps ErrInvalidInput.

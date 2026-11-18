@@ -26,6 +26,7 @@ import (
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/dashboard"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/files"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/installers"
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/maintenance"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/monitoring"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/players"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
@@ -116,6 +117,7 @@ func newServerWith(t *testing.T, containers monitoring.ContainerCollector) *clie
 		activity.NewService(audit),
 		serversSvc, installersSvc, files.NewService(serverFiles, serversSvc, audit), backupsSvc,
 		players.NewService(serverFiles, serversSvc, pc, fakeAccounts{}, pinger, audit),
+		maintenance.NewService(serversSvc, backupsSvc, serverFiles, audit),
 		wspres.NewHub(authSvc, nil, log), static, false, log)
 
 	srv := httptest.NewServer(api.Handler())

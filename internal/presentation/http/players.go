@@ -32,8 +32,13 @@ func (a *API) listPlayers(w http.ResponseWriter, r *http.Request) {
 	for _, p := range l.Whitelist {
 		wl = append(wl, map[string]string{"uuid": p.UUID, "name": p.Name})
 	}
+	ops := make([]map[string]any, 0, len(l.Ops))
+	for _, o := range l.Ops {
+		ops = append(ops, map[string]any{"uuid": o.UUID, "name": o.Name, "level": o.Level})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"whitelist":      map[string]any{"enabled": l.WhitelistEnabled, "players": wl},
+		"ops":            ops,
 		"banned_players": bans,
 		"banned_ips":     ips,
 	})
@@ -92,6 +97,12 @@ func (a *API) playerRoutes(mux *http.ServeMux, route func(http.HandlerFunc) http
 	})))
 	mux.HandleFunc("DELETE "+base+"/whitelist", route(a.playerAction(func(r *http.Request, id string, b playerBody, actor servers.Actor) error {
 		return a.players.RemoveWhitelist(r.Context(), id, b.Name, actor)
+	})))
+	mux.HandleFunc("POST "+base+"/ops", route(a.playerAction(func(r *http.Request, id string, b playerBody, actor servers.Actor) error {
+		return a.players.AddOp(r.Context(), id, b.Name, actor)
+	})))
+	mux.HandleFunc("DELETE "+base+"/ops", route(a.playerAction(func(r *http.Request, id string, b playerBody, actor servers.Actor) error {
+		return a.players.RemoveOp(r.Context(), id, b.Name, actor)
 	})))
 	mux.HandleFunc("POST "+base+"/bans", route(a.playerAction(func(r *http.Request, id string, b playerBody, actor servers.Actor) error {
 		return a.players.Ban(r.Context(), id, b.Name, b.Reason, actor)

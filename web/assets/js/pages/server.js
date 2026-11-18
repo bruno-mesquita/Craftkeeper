@@ -1,7 +1,7 @@
 // Server page: header with live status and lifecycle actions, then tabs: the live console
 // (WebSocket channel server:<id>, docs/WEBSOCKET.md) with old log files and search, the file
 // manager, backups, players, the server list icon with the server.properties form, the memory/CPU
-// limits and the server's activity. Usage is polled over REST.
+// limits, the game version and world tools, and the server's activity. Usage is polled over REST.
 import { api, ApiError } from '../api.js';
 import { openDialog } from '../dialog.js';
 import { h, toast } from '../dom.js';
@@ -14,6 +14,7 @@ import { filterLines, listLogs, matchesLine, readLog } from '../log-viewer.js';
 import { mountPlayerManager } from '../player-manager.js';
 import { mountPropertiesManager } from '../properties-manager.js';
 import { mountResourcesManager } from '../resources-manager.js';
+import { mountWorldManager } from '../world-manager.js';
 import { ACTIONS, ACTIVE, STATUS, confirmAction, gameVersion, lifecycleActions, runAction } from '../server-actions.js';
 import * as ws from '../ws.js';
 
@@ -99,6 +100,8 @@ export function mount(root, { param: id }) {
   let icon = null; // server-icon.png, mounted with the properties form
   const resourcesPanel = h('section', { class: 'card', id: 'panel-resources', role: 'tabpanel', 'aria-labelledby': 'tab-resources', hidden: true });
   let resources = null; // memory/CPU limits form, mounted on first use
+  const worldPanel = h('section', { class: 'card', id: 'panel-world', role: 'tabpanel', 'aria-labelledby': 'tab-world', hidden: true });
+  let world = null; // game version and world tools, mounted on first use
   const activityPanel = h('section', { class: 'card', id: 'panel-activity', role: 'tabpanel', 'aria-labelledby': 'tab-activity', hidden: true });
   let activity = null; // this server's audit events, mounted on first use
 
@@ -109,9 +112,10 @@ export function mount(root, { param: id }) {
     players: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-players', 'aria-controls': 'panel-players' }, 'Players'),
     properties: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-properties', 'aria-controls': 'panel-properties' }, 'Properties'),
     resources: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-resources', 'aria-controls': 'panel-resources' }, 'Resources'),
+    world: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-world', 'aria-controls': 'panel-world' }, 'World'),
     activity: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-activity', 'aria-controls': 'panel-activity' }, 'Activity'),
   };
-  const panels = { console: consolePanel, files: filesPanel, backups: backupsPanel, players: playersPanel, properties: propertiesPanel, resources: resourcesPanel, activity: activityPanel };
+  const panels = { console: consolePanel, files: filesPanel, backups: backupsPanel, players: playersPanel, properties: propertiesPanel, resources: resourcesPanel, world: worldPanel, activity: activityPanel };
 
   function showTab(name) {
     for (const [n, b] of Object.entries(tabButtons)) {
@@ -147,6 +151,16 @@ export function mount(root, { param: id }) {
     if (name === 'resources' && !resources) {
       resources = mountResourcesManager(resourcesPanel, { id, onSaved: (view) => { server = view; renderHeader(); } });
       if (server) resources.setServer(server);
+    }
+    if (name === 'world' && !world) {
+      world = mountWorldManager(worldPanel, {
+        id,
+        onChanged: (view) => { server = view; renderHeader(); },
+        onRestored: () => { files?.refresh(); backups?.refresh(); },
+      });
+      if (server) world.setServer(server);
+    } else if (name === 'world') {
+      world.refresh();
     }
     if (name === 'activity') {
       if (!activity) activity = mountActivity(activityPanel, { serverId: id });
@@ -191,6 +205,7 @@ export function mount(root, { param: id }) {
     playersPanel,
     propertiesPanel,
     resourcesPanel,
+    worldPanel,
     activityPanel);
   showTab('console');
 
@@ -222,6 +237,7 @@ export function mount(root, { param: id }) {
     properties?.setRunning(ACTIVE.has(server.status));
     icon?.setRunning(ACTIVE.has(server.status));
     resources?.setServer(server);
+    world?.setServer(server);
   }
 
   async function act(action) {

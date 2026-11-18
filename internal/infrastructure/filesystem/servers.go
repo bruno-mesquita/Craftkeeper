@@ -66,6 +66,22 @@ func (d *ServerDirs) Create(id string) (string, error) {
 	return path, nil
 }
 
+// Path is the absolute host path of an existing server's data directory.
+func (d *ServerDirs) Path(id string) (string, error) {
+	if !domain.ValidServerID(id) {
+		return "", fmt.Errorf("filesystem: invalid server id %q", id)
+	}
+	path := filepath.Join(d.root, id)
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", fmt.Errorf("filesystem: %w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("filesystem: %s is not a directory", path)
+	}
+	return path, nil
+}
+
 // Remove deletes a server's data directory and its backups. Missing ones are not an error.
 func (d *ServerDirs) Remove(id string) error {
 	for _, root := range []string{d.root, d.backups} {

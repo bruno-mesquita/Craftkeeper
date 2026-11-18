@@ -94,6 +94,13 @@ func writeDomainError(w http.ResponseWriter, log *slog.Logger, err error) {
 		writeError(w, http.StatusConflict, "backup_not_ready", "the backup is not ready")
 	case errors.Is(err, domain.ErrServerBusy):
 		writeError(w, http.StatusConflict, "server_busy", "the server is being created, started or restarted; try again shortly")
+	case errors.Is(err, domain.ErrModpackServer):
+		writeError(w, http.StatusConflict, "modpack_server", "the server runs a modpack, whose scripts choose the game version")
+	case errors.Is(err, domain.ErrInvalidWorld):
+		writeError(w, http.StatusUnprocessableEntity, "invalid_world", "the archive does not contain a Minecraft world (level.dat)")
+	case errors.Is(err, domain.ErrBackupFailed):
+		log.Error("automatic backup failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "backup_failed", "the automatic backup failed, so nothing was changed")
 	case errors.Is(err, domain.ErrInstallerUnavailable):
 		log.Warn("version source unavailable", "err", err)
 		writeError(w, http.StatusServiceUnavailable, "installer_unavailable", "the version list could not be downloaded; try again later")

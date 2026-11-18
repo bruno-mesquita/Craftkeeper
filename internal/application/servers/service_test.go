@@ -141,6 +141,20 @@ func (f *fakeRuntime) Remove(_ context.Context, id, serverID string) error {
 	return nil
 }
 
+func (f *fakeRuntime) RenameReplaced(_ context.Context, id, serverID string, replaced bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	op := "rename-back"
+	if replaced {
+		op = "rename-replaced"
+	}
+	if err := f.begin(op); err != nil {
+		return err
+	}
+	_, err := f.owned(id, serverID)
+	return err
+}
+
 func (f *fakeRuntime) UpdateLimits(_ context.Context, id, serverID string, mem, cpu int) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

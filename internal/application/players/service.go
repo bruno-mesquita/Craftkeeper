@@ -1,4 +1,4 @@
-// Package players manages a Minecraft server's whitelist and ban lists. A running server
+// Package players manages a Minecraft server's whitelist, operators and ban lists. A running server
 // owns those files and rewrites them, so changes go through its console; a stopped server's
 // files are edited directly. Reads always come from the files.
 package players
@@ -84,6 +84,7 @@ func (s *Service) Online(ctx context.Context, id string) (domain.OnlinePlayers, 
 type Lists struct {
 	WhitelistEnabled bool
 	Whitelist        []domain.Player
+	Ops              []domain.Operator
 	BannedPlayers    []domain.PlayerBan
 	BannedIPs        []domain.IPBan
 }
@@ -100,6 +101,9 @@ func (s *Service) List(ctx context.Context, id string) (Lists, error) {
 	v, _ := domain.PropertyValue(props.Content, "white-list")
 	l.WhitelistEnabled = strings.TrimSpace(v) == "true"
 	if l.Whitelist, err = readList[domain.Player](s, id, domain.WhitelistFile); err != nil {
+		return l, err
+	}
+	if l.Ops, err = readList[domain.Operator](s, id, domain.OpsFile); err != nil {
 		return l, err
 	}
 	if l.BannedPlayers, err = readList[domain.PlayerBan](s, id, domain.BannedPlayersFile); err != nil {
@@ -145,6 +149,39 @@ func (s *Service) RemoveWhitelist(ctx context.Context, id, name string, actor se
 	return s.mutate(ctx, id, actor, domain.AuditWhitelistRemove, name, "whitelist remove "+name, func() error {
 		return editList(s, id, domain.WhitelistFile, func(l []domain.Player) []domain.Player {
 			return without(l, func(p domain.Player) bool { return strings.EqualFold(p.Name, name) })
+		})
+	})
+}
+
+// AddOp makes a player an operator, at the server's op-permission-level.
+func (s *Service) AddOp(ctx context.Context, id, name string, actor servers.Actor) error {
+	if err := domain.ValidatePlayerName(name); err != nil {
+		return err
+	}
+	return s.mutate(ctx, id, actor, domain.AuditPlayerOp, name, "op "+name, func() error {
+		player, err := s.resolve(ctx, id, name)
+		if err != nil {
+			return err
+		}
+		props, err := s.read(id, domain.PropertiesFile)
+		if err != nil {
+			return err
+		}
+		op := domain.Operator{UUID: player.UUID, Name: player.Name, Level: domain.OpLevel(props.Content)}
+		return editList(s, id, domain.OpsFile, func(l []domain.Operator) []domain.Operator {
+			l = without(l, func(o domain.Operator) bool { return strings.EqualFold(o.Name, name) || o.UUID == op.UUID })
+			return append(l, op)
+		})
+	})
+}
+
+func (s *Service) RemoveOp(ctx context.Context, id, name string, actor servers.Actor) error {
+	if err := domain.ValidatePlayerName(name); err != nil {
+		return err
+	}
+	return s.mutate(ctx, id, actor, domain.AuditPlayerDeop, name, "deop "+name, func() error {
+		return editList(s, id, domain.OpsFile, func(l []domain.Operator) []domain.Operator {
+			return without(l, func(o domain.Operator) bool { return strings.EqualFold(o.Name, name) })
 		})
 	})
 }

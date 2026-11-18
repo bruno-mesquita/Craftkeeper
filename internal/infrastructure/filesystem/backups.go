@@ -301,12 +301,21 @@ func validStaging(serverID, staging string) bool {
 	return ok && rest != "" && !strings.ContainsAny(rest, "/.")
 }
 
-// CleanupStale removes what an interrupted panel left behind: restore staging directories
-// and temporary backup archives. Run at startup, when nothing is in progress.
+// CleanupStale removes what an interrupted panel left behind: restore staging directories,
+// temporary files at the top of server directories (world imports) and temporary backup
+// archives. Run at startup, when nothing is in progress.
 func (b *Backups) CleanupStale() error {
 	var errs []error
 	if r, err := os.OpenRoot(b.files.root); err == nil {
 		errs = append(errs, removeMatching(r, ".", restorePrefix))
+		// Unfinished uploads, edits and world imports at the top of each server directory.
+		entries, err := fs.ReadDir(r.FS(), ".")
+		errs = append(errs, err)
+		for _, e := range entries {
+			if e.IsDir() && domain.ValidServerID(e.Name()) {
+				errs = append(errs, removeMatching(r, e.Name(), tempPrefix))
+			}
+		}
 		r.Close()
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		errs = append(errs, err)

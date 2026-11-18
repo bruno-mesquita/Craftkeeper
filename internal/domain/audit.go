@@ -28,6 +28,12 @@ const (
 	// kept crashing; the target is "<server name>: <n> restarts".
 	AuditServerCrashLoop = "server.crash_loop"
 
+	// AuditServerVersionChange targets "<server name>: <old version> → <new version>".
+	AuditServerVersionChange = "server.version_change"
+	// World actions target "<server name>: <world directory>".
+	AuditWorldReset  = "world.reset"
+	AuditWorldImport = "world.import"
+
 	// File actions target "<server name>: <path>".
 	AuditFileUpload  = "file.upload"
 	AuditFileWrite   = "file.write"
@@ -51,18 +57,21 @@ const (
 	AuditPlayerPardon    = "player.pardon"
 	AuditIPBan           = "ip.ban"
 	AuditIPPardon        = "ip.pardon"
+	AuditPlayerOp        = "player.op"
+	AuditPlayerDeop      = "player.deop"
 )
 
 // AuditActions lists every action, in display order. Filters only accept these.
 var AuditActions = []string{
 	AuditSetupCompleted, AuditLogin, AuditLogout, AuditPasswordChanged,
 	AuditServerCreate, AuditServerUpdate, AuditServerStart, AuditServerStop, AuditServerRestart,
-	AuditServerKill, AuditServerDelete, AuditServerCrashLoop, AuditConsoleCommand,
+	AuditServerKill, AuditServerDelete, AuditServerCrashLoop, AuditServerVersionChange, AuditConsoleCommand,
+	AuditWorldReset, AuditWorldImport,
 	AuditContainerDelete, AuditModpackConfigure, AuditModpackInstall,
 	AuditFileUpload, AuditFileWrite, AuditFileMkdir, AuditFileRename, AuditFileDelete, AuditFileExtract,
 	AuditBackupCreate, AuditBackupRestore, AuditBackupDelete, AuditBackupSchedule,
 	AuditWhitelistToggle, AuditWhitelistAdd, AuditWhitelistRemove,
-	AuditPlayerBan, AuditPlayerPardon, AuditIPBan, AuditIPPardon,
+	AuditPlayerBan, AuditPlayerPardon, AuditIPBan, AuditIPPardon, AuditPlayerOp, AuditPlayerDeop,
 }
 
 type AuditEvent struct {

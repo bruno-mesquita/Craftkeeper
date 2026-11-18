@@ -257,6 +257,7 @@ func limits(memoryMB, cpuMillicores int) (memory, swap, nanoCPUs int64) {
 
 type inspectResponse struct {
 	ID           string `json:"Id"`
+	Name         string `json:"Name"` // "/<name>"
 	RestartCount int    `json:"RestartCount"`
 	State        struct {
 		Status string `json:"Status"`
@@ -338,6 +339,35 @@ func (r *Runtime) Remove(ctx context.Context, id, serverID string) error {
 		return nil
 	}
 	return err
+}
+
+// replacedSuffix marks a server's previous container while a new one replaces it.
+const replacedSuffix = "-replaced"
+
+// RenameReplaced gives a server's container its normal name, or the "-replaced" name that
+// frees the normal one for a new container (and back, to undo). Already having the wanted
+// name is not an error.
+func (r *Runtime) RenameReplaced(ctx context.Context, id, serverID string, replaced bool) error {
+	if !validContainerID(id) {
+		return domain.ErrContainerMissing
+	}
+	var x inspectResponse
+	if _, err := r.client.call(ctx, http.MethodGet, "/containers/"+id+"/json", nil, defaultTimeout, maxInspectBytes, &x); err != nil {
+		return mapError("inspect container", err)
+	}
+	if x.ID != id || x.Config.Labels[LabelManaged] != managedLabelValue || x.Config.Labels[LabelServerID] != serverID {
+		return fmt.Errorf("%w: container %s, server %s", domain.ErrNotManaged, id, serverID)
+	}
+	name := ContainerName(serverID)
+	if replaced {
+		name += replacedSuffix
+	}
+	if strings.TrimPrefix(x.Name, "/") == name {
+		return nil
+	}
+	q := url.Values{"name": {name}}.Encode()
+	_, err := r.client.call(ctx, http.MethodPost, "/containers/"+id+"/rename?"+q, nil, defaultTimeout, 0, nil)
+	return mapError("rename container", err)
 }
 
 // UpdateLimits changes memory and CPU limits in place.

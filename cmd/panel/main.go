@@ -23,6 +23,7 @@ import (
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/dashboard"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/files"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/installers"
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/maintenance"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/monitoring"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/players"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
@@ -160,7 +161,10 @@ func run() error {
 		backupsSvc.Close()
 	}()
 
-	handler := httpapi.New(authSvc, monitoringSvc, dashboardSvc, activity.NewService(auditLog), serversSvc, installersSvc, filesSvc, backupsSvc, playersSvc, hub, web.FS, cfg.SecureCookie, log).Handler()
+	maintenanceSvc := maintenance.NewService(serversSvc, backupsSvc, serverFiles, auditLog)
+
+	handler := httpapi.New(authSvc, monitoringSvc, dashboardSvc, activity.NewService(auditLog), serversSvc, installersSvc,
+		filesSvc, backupsSvc, playersSvc, maintenanceSvc, hub, web.FS, cfg.SecureCookie, log).Handler()
 	return serve(ctx, log, cfg.Listen, handler, hub)
 }
 

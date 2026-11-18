@@ -54,12 +54,15 @@ func (r *Servers) List(ctx context.Context) ([]domain.Server, error) {
 	return out, rows.Err()
 }
 
-// Update stores the editable fields of x: name, description, limits and container ID.
+// Update stores the editable fields of x: name, description, limits, game version (loader,
+// Minecraft and loader build) and container ID.
 func (r *Servers) Update(ctx context.Context, x domain.Server) error {
 	res, err := r.s.write.ExecContext(ctx,
-		`UPDATE servers SET name = ?, description = ?, memory_mb = ?, cpu_millicores = ?, container_id = ?, updated_at = ?
+		`UPDATE servers SET name = ?, description = ?, memory_mb = ?, cpu_millicores = ?, loader = ?, version = ?,
+		 loader_version = ?, container_id = ?, updated_at = ?
 		 WHERE id = ?`,
-		x.Name, x.Description, x.MemoryMB, x.CPUMillicores, x.ContainerID, unix(x.UpdatedAt), x.ID)
+		x.Name, x.Description, x.MemoryMB, x.CPUMillicores, x.Loader, x.Version, x.LoaderVersion, x.ContainerID,
+		unix(x.UpdatedAt), x.ID)
 	if err != nil {
 		return uniqueViolation(err)
 	}
