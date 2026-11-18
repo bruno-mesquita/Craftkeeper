@@ -6,6 +6,7 @@ package players
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -35,6 +36,11 @@ type Accounts interface {
 	Face(ctx context.Context, uuid string) ([]byte, error)
 }
 
+// Pinger asks a running game who is online (minecraft.Pinger).
+type Pinger interface {
+	Status(ctx context.Context, port int) (domain.OnlinePlayers, error)
+}
+
 type AuditRecorder interface {
 	Record(ctx context.Context, e domain.AuditEvent) error
 }
@@ -44,12 +50,34 @@ type Service struct {
 	servers  Servers
 	console  Console
 	accounts Accounts
+	pinger   Pinger
 	audit    AuditRecorder
 	now      func() time.Time
 }
 
-func NewService(f Files, s Servers, c Console, accounts Accounts, audit AuditRecorder) *Service {
-	return &Service{files: f, servers: s, console: c, accounts: accounts, audit: audit, now: time.Now}
+func NewService(f Files, s Servers, c Console, accounts Accounts, pinger Pinger, audit AuditRecorder) *Service {
+	return &Service{files: f, servers: s, console: c, accounts: accounts, pinger: pinger, audit: audit, now: time.Now}
+}
+
+// Online asks the running game who is connected. A game still loading its world does not
+// answer yet: ErrGameUnreachable.
+func (s *Service) Online(ctx context.Context, id string) (domain.OnlinePlayers, error) {
+	srv, err := s.servers.Get(ctx, id)
+	if err != nil {
+		return domain.OnlinePlayers{}, err
+	}
+	switch srv.Status {
+	case domain.StatusRunning, domain.StatusStarting:
+	case domain.StatusUnknown:
+		return domain.OnlinePlayers{}, domain.ErrDockerUnavailable
+	default:
+		return domain.OnlinePlayers{}, domain.ErrServerNotRunning
+	}
+	o, err := s.pinger.Status(ctx, srv.Port)
+	if err != nil {
+		return domain.OnlinePlayers{}, fmt.Errorf("%w: %v", domain.ErrGameUnreachable, err)
+	}
+	return o, nil
 }
 
 // Lists is what the Players tab shows.

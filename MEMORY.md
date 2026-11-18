@@ -360,3 +360,21 @@ Plano: `~/.claude/plans/veja-com-da-suporte-glittery-milner.md`.
   conteúdo; `nosniff` só afeta script/style), sem ícone = tile vazio. Header 48 px, lista 32 px
   (uma carga por linha: linhas são atualizadas no lugar). Salvar/remover recarrega o do header.
   Testado: `sudo make check` passou; conferido pelo usuário no navegador (2026-11-18).
+
+## Players online — Server List Ping (2026-11-18)
+
+Plano: `~/.claude/plans/veja-um-jeito-se-glimmering-tarjan.md`.
+- **D53 · Quem está online via Server List Ping** — o painel faz o ping de status do cliente
+  (handshake + status request, TCP) em `127.0.0.1:<porta do servidor>` (porta publicada no host,
+  `gameBindIP`). Rejeitados: `list` pelo console (cada `SendCommand` grava audit e polui o
+  console a cada poll), parse de "joined/left" (feed só existe com inscrito) e RCON/Query
+  (desligados, D21). Limite: vanilla manda ≤ 12 nomes e nenhum com `hide-online-players=true`;
+  `online`/`max` sempre certos. Sem cache (poll de 10 s por aba aberta é barato).
+- **Implementado:** `infrastructure/minecraft` (stdlib, resposta ≤ 256 KiB, timeout 3 s, só
+  loopback, descarta entradas com UUID zero/nome inválido), `domain.OnlinePlayers`,
+  `domain.ErrGameUnreachable` (→ `503 game_unreachable`), `players.Service.Online` (port
+  `Pinger`), `GET /servers/{id}/players/online` (`docs/API.md`). UI: seção "Online now" no topo
+  da aba Players (avatares, `n / max`, "+N não listados"), badge "Online" na whitelist; poll a
+  cada 10 s só com servidor rodando, aba visível e documento visível. `make css` regenerado.
+- **Testado:** `minecraft/ping_test.go` (servidor SLP falso), contrato HTTP `TestOnlinePlayers`.
+  `sudo make check` passou (2026-11-18). Verificado pelo usuário com servidor real: a listagem funcionou.

@@ -31,6 +31,7 @@ import (
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/gameversions"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/hostnet"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/metrics"
+	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/minecraft"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/mojang"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/password"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/sqlite"
@@ -128,7 +129,7 @@ func run() error {
 		<-eventsDone
 		consoleSvc.Close()
 	}()
-	playersSvc := players.NewService(serverFiles, serversSvc, consoleSvc, mojang.New(mojang.Official), auditLog)
+	playersSvc := players.NewService(serverFiles, serversSvc, consoleSvc, mojang.New(mojang.Official), minecraft.New(), auditLog)
 	hub := wspres.NewHub(authSvc, consoleSvc, log)
 
 	// Backups pause a running game's saving through the console, so they end before it.

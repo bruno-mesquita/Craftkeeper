@@ -1,17 +1,21 @@
-// Players of one server (docs/API.md, "Players"): the whitelist with its on/off switch, banned
-// players and banned IPs. A running server applies changes through its console; a stopped
+// Players of one server (docs/API.md, "Players"): who is online (asked to the running game),
+// the whitelist with its on/off switch, banned players and banned IPs. A running server applies changes through its console; a stopped
 // one has its files edited. The lists always show what is on disk.
 import { api } from './api.js';
 import { confirmDialog } from './dialog.js';
 import { h, toast } from './dom.js';
 
 const SETTLE_MS = 1000; // the game writes its files shortly after a console command
+const ONLINE_MS = 10000; // online players are polled while the tab is shown
 
 export function mountPlayerManager(root, { id }) {
   const base = `/servers/${id}/players`;
   let running = false;
   let loading = 0; // guards against out-of-order listings
   let settle = null;
+  let polling = 0; // guards against out-of-order online answers
+  let pollTimer = null;
+  let online = { uuids: new Set(), names: new Set() };
 
   const note = h('p', { class: 'text-xs text-muted', role: 'status' });
   const status = h('p', { class: 'text-xs text-muted', role: 'status' });
@@ -63,6 +67,7 @@ export function mountPlayerManager(root, { id }) {
             'aria-label': `${rowLabel} ${item.name ?? item.ip}`, onclick: () => onRemove(item),
           }, rowLabel))));
         none.hidden = items.length > 0;
+        markOnline();
       },
     };
   }
@@ -89,7 +94,15 @@ export function mountPlayerManager(root, { id }) {
   const whitelist = section({
     title: 'Allowed players', addLabel: 'Add', empty: 'No players on the whitelist.', rowLabel: 'Remove',
     inputs: [{ name: 'name', label: 'Player name', placeholder: 'Player name', required: true }],
-    details: (p) => detail(p.name, p.uuid),
+    details: (p) => [
+      h('p', { class: 'flex items-center gap-2 font-medium' },
+        h('span', { class: 'truncate' }, p.name),
+        h('span', {
+          class: 'badge whitespace-nowrap text-success border-success/40', hidden: true,
+          'data-online': '', 'data-uuid': p.uuid, 'data-name': p.name.toLowerCase(),
+        }, 'Online')),
+      h('p', { class: 'truncate text-xs text-muted' }, p.uuid),
+    ],
     onAdd: ({ name }) => api('POST', `${base}/whitelist`, { name }),
     onRemove: (p) => send('DELETE', 'whitelist', { name: p.name }, `${p.name} removed from the whitelist.`),
   });
@@ -114,14 +127,69 @@ export function mountPlayerManager(root, { id }) {
     onRemove: (b) => send('DELETE', 'ip-bans', { ip: b.ip }, `${b.ip} unbanned.`),
   });
 
+  // Who is online: count from the game and the names it shares (at most a sample of them).
+  const onlineCount = h('span', { class: 'text-xs text-muted' });
+  const onlineList = h('ul', { class: 'mt-3 flex flex-wrap gap-2' });
+  const onlineNote = h('p', { class: 'mt-3 text-xs text-muted', role: 'status' });
+  const onlineSection = h('section', { class: 'mb-6 border-b border-border pb-4', 'aria-labelledby': 'online-label' },
+    h('div', { class: 'flex items-center gap-2' },
+      h('span', { class: 'size-2 rounded-full bg-success', 'aria-hidden': 'true' }),
+      h('h2', { id: 'online-label', class: 'text-sm font-semibold' }, 'Online now'),
+      onlineCount),
+    onlineList, onlineNote);
+
+  function renderOnline(out, message) {
+    onlineList.replaceChildren(...(out?.players ?? []).map((p) => h('li', {
+      class: 'flex items-center gap-2 rounded-md border border-border py-1 pl-1 pr-3',
+    }, avatar(p), h('span', { class: 'font-medium' }, p.name))));
+    onlineCount.textContent = out ? `${out.online} / ${out.max}` : '';
+    const hidden = out ? out.online - out.players.length : 0;
+    onlineNote.textContent = message
+      ?? (out.online === 0 ? 'Nobody is playing right now.'
+        : hidden > 0 ? `${hidden} more ${hidden === 1 ? 'player is' : 'players are'} online; the game does not share every name.`
+          : '');
+    online = {
+      uuids: new Set((out?.players ?? []).map((p) => p.uuid)),
+      names: new Set((out?.players ?? []).map((p) => p.name.toLowerCase())),
+    };
+    markOnline();
+  }
+
+  function markOnline() {
+    for (const el of root.querySelectorAll('[data-online]')) {
+      el.hidden = !(online.uuids.has(el.dataset.uuid) || online.names.has(el.dataset.name));
+    }
+  }
+
+  async function pollOnline() {
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(pollOnline, ONLINE_MS);
+    const current = ++polling;
+    if (!running) {
+      renderOnline(null, 'The server is not running.');
+      return;
+    }
+    if (root.hidden || document.hidden) return;
+    try {
+      const out = await api('GET', `${base}/online`);
+      if (current === polling) renderOnline(out);
+    } catch (err) {
+      if (current !== polling) return;
+      renderOnline(null, err.code === 'game_unreachable'
+        ? 'The game is not answering yet; it may still be starting.'
+        : `Could not check who is online: ${err.message}`);
+    }
+  }
+
   root.replaceChildren(
+    onlineSection,
     h('div', { class: 'flex flex-wrap items-center justify-between gap-3' },
       h('div', { class: 'flex items-center gap-3' },
         toggle,
         h('div', null,
           h('p', { id: 'whitelist-label', class: 'font-medium' }, 'Whitelist'),
           h('p', { class: 'text-xs text-muted' }, 'Only the players below can join while it is on.'))),
-      h('button', { class: 'btn btn-ghost', type: 'button', onclick: () => load() }, 'Refresh')),
+      h('button', { class: 'btn btn-ghost', type: 'button', onclick: () => { load(); pollOnline(); } }, 'Refresh')),
     note,
     whitelist.el, bans.el, ipBans.el,
     status);
@@ -181,6 +249,7 @@ export function mountPlayerManager(root, { id }) {
   renderNote();
 
   load();
+  pollOnline();
 
   return {
     setRunning(value) {
@@ -188,8 +257,16 @@ export function mountPlayerManager(root, { id }) {
       running = value;
       renderNote();
       load();
+      pollOnline();
     },
-    refresh: () => load(),
-    destroy: () => clearTimeout(settle),
+    refresh: () => {
+      load();
+      pollOnline();
+    },
+    destroy: () => {
+      clearTimeout(settle);
+      clearTimeout(pollTimer);
+      polling++;
+    },
   };
 }

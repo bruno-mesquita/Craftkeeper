@@ -29,6 +29,14 @@ type Player struct {
 	Name string `json:"name"`
 }
 
+// OnlinePlayers is who a running game reports as connected. Players may list fewer than
+// Online: the game shares at most a sample of names.
+type OnlinePlayers struct {
+	Online  int
+	Max     int
+	Players []Player
+}
+
 // PlayerBan is an entry of banned-players.json.
 type PlayerBan struct {
 	UUID    string `json:"uuid"`

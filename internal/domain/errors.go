@@ -23,6 +23,7 @@ var (
 
 	ErrPlayerNotFound           = errors.New("no Minecraft account has this name")
 	ErrAccountLookupUnavailable = errors.New("Mojang account lookup unavailable")
+	ErrGameUnreachable          = errors.New("the game is not answering on its port")
 
 	ErrFileExists          = errors.New("file already exists")
 	ErrNotDirectory        = errors.New("not a directory")

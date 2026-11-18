@@ -469,6 +469,16 @@ Audit: `whitelist.toggle` (target `<server name>: on|off`), `whitelist.add`,
 "created", "source", "expires", "reason"}]}`. `created`, `source` and `expires` are the
 game's own strings (`expires` is `forever` for panel-made bans).
 
+### `GET /servers/{id}/players/online` — auth
+Who is connected, asked to the running game with the Minecraft Server List Ping (the
+status request of the client's server list) on `127.0.0.1:<server port>`, 3 s timeout, never
+cached. `200 {"online": int, "max": int, "players": [{"uuid", "name"}]}`. `players` is the
+sample the game shares: vanilla lists at most 12 names and none with
+`hide-online-players=true`, so it may be shorter than `online`; entries that are not real
+players (formatted text, the zero UUID) are dropped. `409 server_not_running` (stopped,
+missing, creating…) · `503 game_unreachable` (container running but the game does not answer
+yet, e.g. still loading the world) · `503 docker_unavailable`. Not audited.
+
 ### `PUT /servers/{id}/players/whitelist` — auth + CSRF
 Body `{"enabled": bool}`. `204`.
 

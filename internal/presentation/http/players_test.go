@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -52,6 +53,53 @@ func (fakeAccounts) Face(_ context.Context, uuid string) ([]byte, error) {
 		return []byte("\x89PNG fake"), nil
 	}
 	return nil, domain.ErrNotFound
+}
+
+// fakePinger reports Notch online, or that the game does not answer while down is set.
+type fakePinger struct {
+	mu   sync.Mutex
+	down bool
+	port int
+}
+
+func (f *fakePinger) Status(_ context.Context, port int) (domain.OnlinePlayers, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.port = port
+	if f.down {
+		return domain.OnlinePlayers{}, errors.New("connection refused")
+	}
+	return domain.OnlinePlayers{Online: 2, Max: 20, Players: []domain.Player{{UUID: notchUUID, Name: "Notch"}}}, nil
+}
+
+func TestOnlinePlayers(t *testing.T) {
+	c := newServer(t)
+	res, body := c.do("GET", "/api/v1/servers/0123456789abcdef/players/online", nil, nil)
+	expect(t, res, body, http.StatusUnauthorized, "unauthenticated")
+	c.setupAndLogin()
+	id, _ := c.createServer()
+	path := "/api/v1/servers/" + id + "/players/online"
+
+	res, body = c.do("GET", path, nil, nil)
+	expect(t, res, body, http.StatusConflict, "server_not_running")
+
+	res, body = c.do("POST", "/api/v1/servers/"+id+"/start", nil, nil)
+	expect(t, res, body, http.StatusOK, "")
+	res, body = c.do("GET", path, nil, nil)
+	expect(t, res, body, http.StatusOK, "")
+	p := body["players"].([]any)
+	if body["online"] != float64(2) || body["max"] != float64(20) || len(p) != 1 ||
+		p[0].(map[string]any)["uuid"] != notchUUID || p[0].(map[string]any)["name"] != "Notch" {
+		t.Fatalf("online = %v", body)
+	}
+	c.pinger.mu.Lock()
+	if c.pinger.port < 25601 || c.pinger.port > 25700 {
+		t.Errorf("pinged port %d, want the server's game port", c.pinger.port)
+	}
+	c.pinger.down = true
+	c.pinger.mu.Unlock()
+	res, body = c.do("GET", path, nil, nil)
+	expect(t, res, body, http.StatusServiceUnavailable, "game_unreachable")
 }
 
 func TestPlayersRequireAuthAndCSRF(t *testing.T) {

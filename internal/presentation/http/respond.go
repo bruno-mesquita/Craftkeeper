@@ -97,6 +97,8 @@ func writeDomainError(w http.ResponseWriter, log *slog.Logger, err error) {
 	case errors.Is(err, domain.ErrInstallerUnavailable):
 		log.Warn("version source unavailable", "err", err)
 		writeError(w, http.StatusServiceUnavailable, "installer_unavailable", "the version list could not be downloaded; try again later")
+	case errors.Is(err, domain.ErrGameUnreachable):
+		writeError(w, http.StatusServiceUnavailable, "game_unreachable", "the game is not answering yet; it may still be starting")
 	case errors.Is(err, domain.ErrAccountLookupUnavailable):
 		log.Warn("mojang account lookup failed", "err", err)
 		writeError(w, http.StatusServiceUnavailable, "account_lookup_unavailable", "Mojang could not be reached to look up the player; try again later or start the server")
