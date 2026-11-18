@@ -19,6 +19,9 @@ type Config struct {
 	LogLevel     slog.Level
 	// GamePorts is the inclusive range of host TCP ports given to game servers.
 	GamePorts PortRange
+	// SecureCookie marks the session cookie Secure on every response, for a panel served over
+	// HTTPS by a proxy on loopback (tailscale serve). Without it, only TLS requests get it.
+	SecureCookie bool
 }
 
 // PortRange is an inclusive range of TCP ports.
@@ -37,49 +40,57 @@ const (
 // Load reads configuration through getenv (os.Getenv in production) and validates it.
 func Load(getenv func(string) string) (Config, error) {
 	cfg := Config{
-		DataDir:      valueOr(getenv("MESQUITA_DATA_DIR"), defaultDataDir),
-		DockerSocket: valueOr(getenv("MESQUITA_DOCKER_SOCKET"), defaultDockerSocket),
+		DataDir:      valueOr(getenv("DATA_DIR"), defaultDataDir),
+		DockerSocket: valueOr(getenv("DOCKER_SOCKET"), defaultDockerSocket),
 	}
 
-	for _, addr := range strings.Split(valueOr(getenv("MESQUITA_LISTEN"), defaultListen), ",") {
+	for _, addr := range strings.Split(valueOr(getenv("LISTEN"), defaultListen), ",") {
 		addr = strings.TrimSpace(addr)
 		if addr == "" {
 			continue
 		}
 		host, port, err := net.SplitHostPort(addr)
 		if err != nil || port == "" {
-			return Config{}, fmt.Errorf("MESQUITA_LISTEN: invalid address %q (want host:port)", addr)
+			return Config{}, fmt.Errorf("LISTEN: invalid address %q (want host:port)", addr)
 		}
 		if host == "" {
-			return Config{}, fmt.Errorf("MESQUITA_LISTEN: address %q must name an explicit interface IP", addr)
+			return Config{}, fmt.Errorf("LISTEN: address %q must name an explicit interface IP", addr)
 		}
 		cfg.Listen = append(cfg.Listen, addr)
 	}
 	if len(cfg.Listen) == 0 {
-		return Config{}, fmt.Errorf("MESQUITA_LISTEN: no address configured")
+		return Config{}, fmt.Errorf("LISTEN: no address configured")
 	}
 
 	if !filepath.IsAbs(cfg.DataDir) {
-		return Config{}, fmt.Errorf("MESQUITA_DATA_DIR: must be an absolute path, got %q", cfg.DataDir)
+		return Config{}, fmt.Errorf("DATA_DIR: must be an absolute path, got %q", cfg.DataDir)
 	}
 	if !filepath.IsAbs(cfg.DockerSocket) {
-		return Config{}, fmt.Errorf("MESQUITA_DOCKER_SOCKET: must be an absolute path, got %q", cfg.DockerSocket)
+		return Config{}, fmt.Errorf("DOCKER_SOCKET: must be an absolute path, got %q", cfg.DockerSocket)
 	}
 
-	ports, err := parsePortRange(valueOr(getenv("MESQUITA_GAME_PORTS"), defaultGamePorts))
+	ports, err := parsePortRange(valueOr(getenv("GAME_PORTS"), defaultGamePorts))
 	if err != nil {
-		return Config{}, fmt.Errorf("MESQUITA_GAME_PORTS: %w", err)
+		return Config{}, fmt.Errorf("GAME_PORTS: %w", err)
 	}
 	cfg.GamePorts = ports
 	for _, addr := range cfg.Listen {
 		_, p, _ := net.SplitHostPort(addr)
 		if port, err := strconv.Atoi(p); err == nil && cfg.GamePorts.Contains(port) {
-			return Config{}, fmt.Errorf("MESQUITA_GAME_PORTS: range includes the panel port %d", port)
+			return Config{}, fmt.Errorf("GAME_PORTS: range includes the panel port %d", port)
 		}
 	}
 
-	if err := cfg.LogLevel.UnmarshalText([]byte(valueOr(getenv("MESQUITA_LOG_LEVEL"), "info"))); err != nil {
-		return Config{}, fmt.Errorf("MESQUITA_LOG_LEVEL: %w", err)
+	if v := strings.TrimSpace(getenv("SECURE_COOKIE")); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return Config{}, fmt.Errorf("SECURE_COOKIE: invalid boolean %q (want true or false)", v)
+		}
+		cfg.SecureCookie = b
+	}
+
+	if err := cfg.LogLevel.UnmarshalText([]byte(valueOr(getenv("LOG_LEVEL"), "info"))); err != nil {
+		return Config{}, fmt.Errorf("LOG_LEVEL: %w", err)
 	}
 	return cfg, nil
 }

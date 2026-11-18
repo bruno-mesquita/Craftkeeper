@@ -3,7 +3,7 @@
 // enabled only in that state; the Java heap follows the memory limit on the next start.
 import { api } from './api.js';
 import { clearFormError, formValues, h, showFormError, toast } from './dom.js';
-import { ACTIVE, limitFields } from './server-actions.js';
+import { ACTIVE, STOPPED, limitFields } from './server-actions.js';
 
 export function mountResourcesManager(root, { id, onSaved }) {
   let server = null;
@@ -22,7 +22,7 @@ export function mountResourcesManager(root, { id, onSaved }) {
     h('div', { class: 'flex justify-end' }, saveBtn));
   root.replaceChildren(form);
 
-  const editable = () => server?.status === 'stopped';
+  const editable = () => STOPPED.has(server?.status);
   const changed = () => server && (Number(memory.value) !== server.memory_mb || Number(cpu.value) !== server.cpu_cores);
 
   function fill() {

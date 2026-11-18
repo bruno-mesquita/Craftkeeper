@@ -114,7 +114,7 @@ func newServerWith(t *testing.T, containers monitoring.ContainerCollector) *clie
 		dashboard.NewService(docker.NewClient(filepath.Join(t.TempDir(), "no-docker.sock")), serversSvc, audit),
 		serversSvc, installersSvc, files.NewService(serverFiles, serversSvc, audit), backupsSvc,
 		players.NewService(serverFiles, serversSvc, pc, fakeAccounts{}, pinger, audit),
-		wspres.NewHub(authSvc, nil, log), static, log)
+		wspres.NewHub(authSvc, nil, log), static, false, log)
 
 	srv := httptest.NewServer(api.Handler())
 	t.Cleanup(srv.Close)

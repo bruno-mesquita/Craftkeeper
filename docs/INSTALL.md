@@ -42,7 +42,7 @@ filesystem, so it is expected to work — confirm on first deploy.
 
 ```bash
 sudo ss -ltnp | grep -E ':8090\b' || echo "8090 free"
-# Game servers use MESQUITA_GAME_PORTS (default 25601-25700); list what is already bound there:
+# Game servers use GAME_PORTS (default 25601-25700); list what is already bound there:
 sudo ss -ltn | awk '{print $4}' | grep -E ':256(0[1-9]|[1-9][0-9])$|:25700$' || echo "game range free"
 ```
 
@@ -89,6 +89,27 @@ systemctl status mesquita-panel
 curl -s http://127.0.0.1:8090/api/v1/health     # {"status":"ok"}
 ```
 
+## 8b. HTTPS with `tailscale serve`
+
+The panel does not terminate TLS itself: Tailscale serves it over HTTPS with a certificate it
+obtains and renews for the machine's tailnet name. Requires MagicDNS and HTTPS certificates to be
+enabled in the Tailscale admin console (DNS page).
+
+```bash
+# config.env: LISTEN=127.0.0.1:8090 and SECURE_COOKIE=true, then restart
+sudo tailscale serve --bg --https=443 http://127.0.0.1:8090
+tailscale serve status       # shows https://<machine>.<tailnet>.ts.net
+```
+
+`tailscale serve` only listens on the Tailscale interface, so it does not clash with other
+services bound to port 443 on the LAN; if it does, pick another `--https=` port. The setting
+persists across reboots (`--bg`); `sudo tailscale serve --https=443 off` removes it.
+
+Check after enabling it: login works and the cookie is `Secure` (browser dev tools), and the
+console connects (the WebSocket requires `Origin` to match `Host`, so the proxy must keep the
+`Host` header). Behind the proxy every client appears as `127.0.0.1` in the audit log and the
+per-IP login limit.
+
 ## 9. Logs
 
 ```bash
@@ -103,7 +124,8 @@ While no administrator exists, every start logs a **one-time setup token**:
 journalctl -u mesquita-panel | grep setup_token
 ```
 
-Open `http://100.126.54.17:8090` (Tailscale) or tunnel with
+Open `https://<machine>.<tailnet>.ts.net` (with `tailscale serve`), `http://100.126.54.17:8090`
+(plain HTTP over Tailscale, if the panel listens there) or tunnel with
 `ssh -L 8090:127.0.0.1:8090 mesquita-server`, enter the token, and create the administrator.
 After that the setup endpoint is permanently closed. There is no default password.
 

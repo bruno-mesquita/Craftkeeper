@@ -113,6 +113,16 @@ func run() error {
 		return err
 	}
 	defer serversSvc.Close()
+	// The crash guard stops servers stuck in a restart loop; it ends before Close waits.
+	crashGuardDone := make(chan struct{})
+	go func() {
+		defer close(crashGuardDone)
+		serversSvc.Run(ctx, dockerClient, log)
+	}()
+	defer func() {
+		stop()
+		<-crashGuardDone
+	}()
 	dashboardSvc := dashboard.NewService(dockerClient, serversSvc, auditLog)
 	serverFiles := filesystem.NewServerFiles(cfg.ServersDir(), uid, gid)
 	filesSvc := files.NewService(serverFiles, serversSvc, auditLog)
@@ -149,7 +159,7 @@ func run() error {
 		backupsSvc.Close()
 	}()
 
-	handler := httpapi.New(authSvc, monitoringSvc, dashboardSvc, serversSvc, installersSvc, filesSvc, backupsSvc, playersSvc, hub, web.FS, log).Handler()
+	handler := httpapi.New(authSvc, monitoringSvc, dashboardSvc, serversSvc, installersSvc, filesSvc, backupsSvc, playersSvc, hub, web.FS, cfg.SecureCookie, log).Handler()
 	return serve(ctx, log, cfg.Listen, handler, hub)
 }
 

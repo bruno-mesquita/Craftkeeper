@@ -27,6 +27,11 @@ type Server struct {
 	ContainerID   string
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+
+	// Set when the panel stopped the server because it kept crashing (crash loop); cleared by
+	// the next start or restart through the panel.
+	CrashedAt     time.Time // zero: no crash recorded
+	CrashRestarts int       // automatic restarts seen in the window that triggered the stop
 }
 
 type ServerStatus string
@@ -35,6 +40,7 @@ const (
 	StatusRunning    ServerStatus = "running"
 	StatusStarting   ServerStatus = "starting" // running, health check not passed yet
 	StatusStopped    ServerStatus = "stopped"
+	StatusCrashed    ServerStatus = "crashed" // stopped by the panel after a crash loop
 	StatusRestarting ServerStatus = "restarting"
 	StatusMissing    ServerStatus = "missing" // the container no longer exists
 	StatusUnknown    ServerStatus = "unknown" // Docker is unreachable
@@ -50,6 +56,9 @@ type ContainerState struct {
 	ServerID string
 	State    string // Docker state: created, running, restarting, exited, …
 	Health   string // Docker health status: starting, healthy, unhealthy, or empty
+	// RestartCount counts the restarts done by the restart policy since the last start
+	// requested through the API (always 0 when not known, e.g. from a container list).
+	RestartCount int
 }
 
 // Status maps a Docker container state to a server status.
@@ -65,6 +74,16 @@ func (c ContainerState) Status() ServerStatus {
 	default: // created, paused, exited, dead, removing
 		return StatusStopped
 	}
+}
+
+// StatusOf derives a server's status from its container state: a stopped container of a
+// server with a recorded crash loop is crashed.
+func StatusOf(x Server, c ContainerState) ServerStatus {
+	st := c.Status()
+	if st == StatusStopped && !x.CrashedAt.IsZero() {
+		return StatusCrashed
+	}
+	return st
 }
 
 // Server limits.

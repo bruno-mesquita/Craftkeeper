@@ -182,7 +182,7 @@ func backupMode(st domain.ServerStatus) (online bool, err error) {
 	switch st {
 	case domain.StatusRunning:
 		return true, nil
-	case domain.StatusStopped, domain.StatusMissing:
+	case domain.StatusStopped, domain.StatusCrashed, domain.StatusMissing:
 		return false, nil
 	case domain.StatusStarting, domain.StatusRestarting, domain.StatusCreating:
 		return false, domain.ErrServerBusy
@@ -437,7 +437,7 @@ func (s *Service) restore(ctx context.Context, b domain.Backup) error {
 
 func stoppedForRestore(st domain.ServerStatus) error {
 	switch st {
-	case domain.StatusStopped, domain.StatusMissing:
+	case domain.StatusStopped, domain.StatusCrashed, domain.StatusMissing:
 		return nil
 	case domain.StatusUnknown:
 		return domain.ErrDockerUnavailable

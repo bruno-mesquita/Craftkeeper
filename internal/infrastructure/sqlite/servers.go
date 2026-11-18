@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
 )
@@ -16,6 +17,9 @@ func NewServers(s *Store) *Servers { return &Servers{s: s} }
 const serverColumns = `id, name, description, game, loader, version, loader_version, memory_mb, cpu_millicores,
 	port, container_id, created_at, updated_at`
 
+// selectServerColumns adds the crash record, written only by MarkCrashed and ClearCrash.
+const selectServerColumns = serverColumns + `, crashed_at, crash_restarts`
+
 // Create stores x. A duplicate name or port is reported as a ValidationError on that field.
 func (r *Servers) Create(ctx context.Context, x domain.Server) error {
 	_, err := r.s.write.ExecContext(ctx, `INSERT INTO servers (`+serverColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -25,7 +29,7 @@ func (r *Servers) Create(ctx context.Context, x domain.Server) error {
 }
 
 func (r *Servers) ByID(ctx context.Context, id string) (domain.Server, error) {
-	x, err := scanServer(r.s.read.QueryRowContext(ctx, `SELECT `+serverColumns+` FROM servers WHERE id = ?`, id))
+	x, err := scanServer(r.s.read.QueryRowContext(ctx, `SELECT `+selectServerColumns+` FROM servers WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Server{}, domain.ErrNotFound
 	}
@@ -34,7 +38,7 @@ func (r *Servers) ByID(ctx context.Context, id string) (domain.Server, error) {
 
 // List returns every server ordered by name.
 func (r *Servers) List(ctx context.Context) ([]domain.Server, error) {
-	rows, err := r.s.read.QueryContext(ctx, `SELECT `+serverColumns+` FROM servers ORDER BY name COLLATE NOCASE`)
+	rows, err := r.s.read.QueryContext(ctx, `SELECT `+selectServerColumns+` FROM servers ORDER BY name COLLATE NOCASE`)
 	if err != nil {
 		return nil, err
 	}
@@ -58,6 +62,27 @@ func (r *Servers) Update(ctx context.Context, x domain.Server) error {
 		x.Name, x.Description, x.MemoryMB, x.CPUMillicores, x.ContainerID, unix(x.UpdatedAt), x.ID)
 	if err != nil {
 		return uniqueViolation(err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+// MarkCrashed records that the server was stopped after a crash loop.
+func (r *Servers) MarkCrashed(ctx context.Context, id string, at time.Time, restarts int) error {
+	return r.setCrash(ctx, id, sql.NullInt64{Int64: unix(at), Valid: true}, restarts)
+}
+
+// ClearCrash forgets the crash record of a server.
+func (r *Servers) ClearCrash(ctx context.Context, id string) error {
+	return r.setCrash(ctx, id, sql.NullInt64{}, 0)
+}
+
+func (r *Servers) setCrash(ctx context.Context, id string, at sql.NullInt64, restarts int) error {
+	res, err := r.s.write.ExecContext(ctx, `UPDATE servers SET crashed_at = ?, crash_restarts = ? WHERE id = ?`, at, restarts, id)
+	if err != nil {
+		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return domain.ErrNotFound
@@ -91,12 +116,16 @@ func (r *Servers) UsedPorts(ctx context.Context) (map[int]bool, error) {
 func scanServer(row interface{ Scan(...any) error }) (domain.Server, error) {
 	var x domain.Server
 	var created, updated int64
+	var crashed sql.NullInt64
 	err := row.Scan(&x.ID, &x.Name, &x.Description, &x.Game, &x.Loader, &x.Version, &x.LoaderVersion, &x.MemoryMB, &x.CPUMillicores,
-		&x.Port, &x.ContainerID, &created, &updated)
+		&x.Port, &x.ContainerID, &created, &updated, &crashed, &x.CrashRestarts)
 	if err != nil {
 		return domain.Server{}, err
 	}
 	x.CreatedAt, x.UpdatedAt = fromUnix(created), fromUnix(updated)
+	if crashed.Valid {
+		x.CrashedAt = fromUnix(crashed.Int64)
+	}
 	return x, nil
 }
 

@@ -82,7 +82,7 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, a.log, err)
 		return
 	}
-	setSessionCookie(w, r, token, domain.SessionAbsoluteTTL)
+	a.setSessionCookie(w, r, token, domain.SessionAbsoluteTTL)
 	writeJSON(w, http.StatusOK, toSessionDTO(id))
 }
 
@@ -91,7 +91,7 @@ func (a *API) logout(w http.ResponseWriter, r *http.Request) {
 		writeDomainError(w, a.log, err)
 		return
 	}
-	clearSessionCookie(w, r)
+	a.clearSessionCookie(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 

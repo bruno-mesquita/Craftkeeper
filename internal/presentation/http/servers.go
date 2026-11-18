@@ -15,21 +15,29 @@ import (
 const stopDeadline = 3 * time.Minute // graceful stop (60 s) + removal, with margin
 
 type serverDTO struct {
-	ID            string  `json:"id"`
-	Name          string  `json:"name"`
-	Description   string  `json:"description"`
-	Game          string  `json:"game"`
-	Loader        string  `json:"loader"`
-	Version       string  `json:"version"`
-	LoaderVersion string  `json:"loader_version"`
-	Status        string  `json:"status"`
-	Failure       string  `json:"failure"`
-	MemoryMB      int     `json:"memory_mb"`
-	CPUCores      float64 `json:"cpu_cores"`
-	Port          int     `json:"port"`
-	ContainerID   string  `json:"container_id"`
-	CreatedAt     string  `json:"created_at"`
-	UpdatedAt     string  `json:"updated_at"`
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Description   string    `json:"description"`
+	Game          string    `json:"game"`
+	Loader        string    `json:"loader"`
+	Version       string    `json:"version"`
+	LoaderVersion string    `json:"loader_version"`
+	Status        string    `json:"status"`
+	Failure       string    `json:"failure"`
+	MemoryMB      int       `json:"memory_mb"`
+	CPUCores      float64   `json:"cpu_cores"`
+	Port          int       `json:"port"`
+	ContainerID   string    `json:"container_id"`
+	CreatedAt     string    `json:"created_at"`
+	UpdatedAt     string    `json:"updated_at"`
+	Crash         *crashDTO `json:"crash"`
+}
+
+// crashDTO is the crash loop record of a server: when the panel stopped it and after how
+// many automatic restarts. Null when there is none.
+type crashDTO struct {
+	At       string `json:"at"`
+	Restarts int    `json:"restarts"`
 }
 
 func toServerDTO(v servers.View) serverDTO {
@@ -37,7 +45,15 @@ func toServerDTO(v servers.View) serverDTO {
 		ID: v.ID, Name: v.Name, Description: v.Description, Game: v.Game, Loader: v.Loader, Version: v.Version,
 		LoaderVersion: v.LoaderVersion, Status: string(v.Status), Failure: v.Failure, MemoryMB: v.MemoryMB, CPUCores: float64(v.CPUMillicores) / 1000, Port: v.Port,
 		ContainerID: v.ContainerID, CreatedAt: rfc3339(v.CreatedAt), UpdatedAt: rfc3339(v.UpdatedAt),
+		Crash: toCrashDTO(v.Server),
 	}
+}
+
+func toCrashDTO(x domain.Server) *crashDTO {
+	if x.CrashedAt.IsZero() {
+		return nil
+	}
+	return &crashDTO{At: rfc3339(x.CrashedAt), Restarts: x.CrashRestarts}
 }
 
 // millicores converts a JSON core count (e.g. 1.5) to millicores; out-of-range values are

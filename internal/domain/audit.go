@@ -22,6 +22,10 @@ const (
 	// AuditConsoleCommand targets "<server id>: <command>", the command truncated.
 	AuditConsoleCommand = "server.console_command"
 
+	// AuditServerCrashLoop is recorded without a user when the panel stops a server that
+	// kept crashing; the target is "<server name>: <n> restarts".
+	AuditServerCrashLoop = "server.crash_loop"
+
 	// File actions target "<server name>: <path>".
 	AuditFileUpload  = "file.upload"
 	AuditFileWrite   = "file.write"

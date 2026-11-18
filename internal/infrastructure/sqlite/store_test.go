@@ -22,8 +22,8 @@ func TestMigrationsApplyFromScratchAndAreIdempotent(t *testing.T) {
 		if err := s.read.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&n); err != nil {
 			t.Fatal(err)
 		}
-		if n != 4 {
-			t.Fatalf("schema_migrations rows = %d, want 4", n)
+		if n != 5 {
+			t.Fatalf("schema_migrations rows = %d, want 5", n)
 		}
 		for _, table := range []string{"users", "sessions", "settings", "audit_log", "servers", "backups", "backup_schedules"} {
 			if err := s.read.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+table).Scan(&n); err != nil {

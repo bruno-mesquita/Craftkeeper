@@ -176,6 +176,9 @@ func TestServerLifecycleContract(t *testing.T) {
 			t.Fatalf("missing %s: %v", k, body)
 		}
 	}
+	if crash, ok := body["crash"]; !ok || crash != nil {
+		t.Fatalf("crash must be present and null: %v", body)
+	}
 
 	for _, step := range []struct{ action, status string }{
 		{"start", "running"}, {"stop", "stopped"}, {"restart", "running"}, {"kill", "stopped"},

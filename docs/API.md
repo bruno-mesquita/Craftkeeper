@@ -141,11 +141,13 @@ registered server is refused (`409 container_not_managed`; use `DELETE /servers/
   ]
 }
 ```
-`servers.running` counts running, starting and restarting servers; servers whose container
+`servers.running` counts running, starting and restarting servers; `servers.stopped` counts
+stopped and crashed ones; servers whose container
 is missing, or whose status is unknown, are only in `total`.
 Audit actions: `auth.setup`, `auth.login`, `auth.logout`, `auth.password_change`,
 `server.create`, `server.update`, `server.start`, `server.stop`, `server.restart`,
-`server.kill`, `server.delete` (target: server name).
+`server.kill`, `server.delete` (target: server name), `server.crash_loop` (no user; see
+Servers).
 
 ## Servers
 
@@ -160,11 +162,13 @@ its database; other containers on the host are never listed or touched.
   "game": "minecraft", "loader": "forge", "version": "1.20.1", "loader_version": "47.3.0",
   "status": "running", "failure": "",
   "memory_mb": 2048, "cpu_cores": 1.5, "port": 25601,
-  "container_id": "64-char hex", "created_at": "...", "updated_at": "..."
+  "container_id": "64-char hex", "created_at": "...", "updated_at": "...",
+  "crash": null
 }
 ```
 `status` is read from Docker on every request, never stored:
-`running`, `starting` (running, health check not passed yet), `stopped`, `restarting`,
+`running`, `starting` (running, health check not passed yet), `stopped`, `crashed` (stopped by
+the panel after a crash loop, see below), `restarting`,
 `missing` (container gone or no longer labelled for this server), `unknown` (Docker unreachable),
 `creating` (the panel is still pulling the image and creating the container; `container_id` is
 empty) and `create_failed` (the background creation failed; `failure` says why, nothing but the
@@ -174,6 +178,15 @@ whose creation did not finish are removed when the panel restarts.
 `loader` is `vanilla`, `fabric`, `forge` or `neoforge`. `version` is the Minecraft release
 (`"LATEST"` only for vanilla: it follows the newest release on every start). `loader_version`
 is the exact loader build installed (empty for vanilla); it never changes by itself.
+
+**Crash loop.** Containers restart by themselves after a crash (`unless-stopped`). When the
+restart policy restarts a server's container 3 times within 10 minutes, the panel stops it,
+records `crash` = `{"at": "RFC 3339", "restarts": 3}` and audits `server.crash_loop` (no user;
+target `<server name>: <n> restarts`). While its container stays stopped, the server's status
+is `crashed`, which behaves like `stopped` everywhere (start, limits, backups, restore, player
+lists). The record survives panel restarts and is cleared by the next successful `start` or
+`restart`; `crash` is `null` otherwise. The game's own report, if it wrote one, is the newest
+file in `crash-reports/` (Files API).
 
 An `{id}` that is not a valid server ID answers `404 not_found` without any lookup.
 

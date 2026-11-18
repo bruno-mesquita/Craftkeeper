@@ -219,7 +219,7 @@ func (s *Service) mutate(ctx context.Context, id string, actor servers.Actor, ac
 	switch srv.Status {
 	case domain.StatusRunning, domain.StatusStarting:
 		err = s.console.SendCommand(ctx, id, command, actor)
-	case domain.StatusStopped, domain.StatusMissing:
+	case domain.StatusStopped, domain.StatusCrashed, domain.StatusMissing:
 		err = viaFiles()
 	case domain.StatusUnknown:
 		return domain.ErrDockerUnavailable

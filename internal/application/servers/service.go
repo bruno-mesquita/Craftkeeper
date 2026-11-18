@@ -74,9 +74,13 @@ type Service struct {
 	jobsMu sync.Mutex
 	jobs   map[string]*createJob
 
+	// Automatic restarts seen per server, for crash loop detection (crashguard.go).
+	crashMu sync.Mutex
+	crashes map[string]*restartTrack
+
 	ctx    context.Context // cancelled by Close
 	cancel context.CancelFunc
-	wg     sync.WaitGroup // provision goroutines
+	wg     sync.WaitGroup // provision and crash-loop stop goroutines
 }
 
 type createJob struct {
@@ -87,7 +91,7 @@ func NewService(repo ServerRepository, runtime ContainerRuntime, dirs DataDirs, 
 	audit AuditRecorder, cfg Config) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Service{repo: repo, runtime: runtime, dirs: dirs, installers: installers, audit: audit, cfg: cfg, now: time.Now,
-		jobs: map[string]*createJob{}, ctx: ctx, cancel: cancel}
+		jobs: map[string]*createJob{}, crashes: map[string]*restartTrack{}, ctx: ctx, cancel: cancel}
 }
 
 // Create validates the input, pins the loader build, assigns a port and records the server,
@@ -324,7 +328,7 @@ func (s *Service) List(ctx context.Context) ([]View, error) {
 		if dockerDown {
 			out[i].Status = domain.StatusUnknown
 		} else if st, ok := byID[x.ContainerID]; ok && st.ServerID == x.ID {
-			out[i].Status = st.Status()
+			out[i].Status = domain.StatusOf(x, st)
 		}
 	}
 	return out, nil
@@ -341,7 +345,7 @@ func (s *Service) Counts(ctx context.Context) (domain.ServerCounts, error) {
 		switch v.Status {
 		case domain.StatusRunning, domain.StatusStarting, domain.StatusRestarting:
 			c.Running++
-		case domain.StatusStopped:
+		case domain.StatusStopped, domain.StatusCrashed:
 			c.Stopped++
 		}
 	}
@@ -363,7 +367,7 @@ func (s *Service) view(ctx context.Context, x domain.Server) (View, error) {
 	st, err := s.runtime.Inspect(ctx, x.ContainerID, x.ID)
 	switch {
 	case err == nil:
-		return View{Server: x, Status: st.Status()}, nil
+		return View{Server: x, Status: domain.StatusOf(x, st)}, nil
 	case errors.Is(err, domain.ErrContainerMissing), errors.Is(err, domain.ErrNotManaged):
 		return View{Server: x, Status: domain.StatusMissing}, nil
 	case errors.Is(err, domain.ErrDockerUnavailable):
@@ -373,7 +377,7 @@ func (s *Service) view(ctx context.Context, x domain.Server) (View, error) {
 }
 
 func (s *Service) Start(ctx context.Context, id string, actor Actor) (View, error) {
-	return s.act(ctx, id, actor, domain.AuditServerStart, s.runtime.Start)
+	return s.act(ctx, id, actor, domain.AuditServerStart, s.startOp(s.runtime.Start))
 }
 
 func (s *Service) Stop(ctx context.Context, id string, actor Actor) (View, error) {
@@ -381,11 +385,26 @@ func (s *Service) Stop(ctx context.Context, id string, actor Actor) (View, error
 }
 
 func (s *Service) Restart(ctx context.Context, id string, actor Actor) (View, error) {
-	return s.act(ctx, id, actor, domain.AuditServerRestart, s.runtime.Restart)
+	return s.act(ctx, id, actor, domain.AuditServerRestart, s.startOp(s.runtime.Restart))
 }
 
 func (s *Service) Kill(ctx context.Context, id string, actor Actor) (View, error) {
 	return s.act(ctx, id, actor, domain.AuditServerKill, s.runtime.Kill)
+}
+
+// startOp wraps a start or restart: once it succeeds, a recorded crash loop is cleared, since
+// the user chose to run the server again.
+func (s *Service) startOp(op func(ctx context.Context, containerID, serverID string) error) func(ctx context.Context, containerID, serverID string) error {
+	return func(ctx context.Context, containerID, serverID string) error {
+		if err := op(ctx, containerID, serverID); err != nil {
+			return err
+		}
+		s.forgetRestarts(serverID)
+		if err := s.repo.ClearCrash(context.WithoutCancel(ctx), serverID); err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return fmt.Errorf("clear crash record: %w", err)
+		}
+		return nil
+	}
 }
 
 func (s *Service) act(ctx context.Context, id string, actor Actor, action string,
@@ -493,6 +512,7 @@ func (s *Service) Delete(ctx context.Context, id string, deleteFiles bool, actor
 		s.jobsMu.Lock()
 		delete(s.jobs, x.ID)
 		s.jobsMu.Unlock()
+		s.forgetRestarts(x.ID)
 	}
 	s.record(ctx, actor, domain.AuditServerDelete, x.Name, err == nil)
 	return err

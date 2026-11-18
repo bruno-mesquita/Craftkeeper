@@ -99,7 +99,7 @@ func (a *API) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 		id, err := a.auth.Authenticate(r.Context(), c.Value)
 		if err != nil {
 			if errors.Is(err, domain.ErrUnauthenticated) {
-				clearSessionCookie(w, r)
+				a.clearSessionCookie(w, r)
 			}
 			writeDomainError(w, a.log, err)
 			return
@@ -116,17 +116,17 @@ func isSafeMethod(m string) bool {
 	return m == http.MethodGet || m == http.MethodHead || m == http.MethodOptions
 }
 
-func setSessionCookie(w http.ResponseWriter, r *http.Request, token string, maxAge time.Duration) {
+func (a *API) setSessionCookie(w http.ResponseWriter, r *http.Request, token string, maxAge time.Duration) {
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: token, Path: "/",
-		MaxAge: int(maxAge.Seconds()), HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode,
+		MaxAge: int(maxAge.Seconds()), HttpOnly: true, Secure: r.TLS != nil || a.secureCookie, SameSite: http.SameSiteStrictMode,
 	})
 }
 
-func clearSessionCookie(w http.ResponseWriter, r *http.Request) {
+func (a *API) clearSessionCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: "", Path: "/",
-		MaxAge: -1, HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode,
+		MaxAge: -1, HttpOnly: true, Secure: r.TLS != nil || a.secureCookie, SameSite: http.SameSiteStrictMode,
 	})
 }
 

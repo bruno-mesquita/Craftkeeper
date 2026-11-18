@@ -71,7 +71,7 @@ $(TAILWIND_BIN):
 # Listens on loopback and the Tailscale IP (see MEMORY.md). Override: make run RUN_LISTEN=127.0.0.1:8090
 RUN_LISTEN ?= 127.0.0.1:8090,100.126.54.17:8090
 run:
-	MESQUITA_DATA_DIR=$(CURDIR)/.data MESQUITA_LISTEN=$(RUN_LISTEN) MESQUITA_LOG_LEVEL=debug ./bin/mesquita-panel
+	DATA_DIR=$(CURDIR)/.data LISTEN=$(RUN_LISTEN) LOG_LEVEL=debug ./bin/mesquita-panel
 
 clean:
 	rm -rf bin .data

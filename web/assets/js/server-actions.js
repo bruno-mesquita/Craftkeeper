@@ -9,6 +9,7 @@ export const STATUS = {
   starting: { label: 'Starting', tone: 'text-warning border-warning/40' },
   restarting: { label: 'Restarting', tone: 'text-warning border-warning/40' },
   stopped: { label: 'Stopped', tone: 'text-muted' },
+  crashed: { label: 'Crashed', tone: 'text-danger border-danger/40' },
   missing: { label: 'Container missing', tone: 'text-danger border-danger/40' },
   unknown: { label: 'Unknown', tone: 'text-warning border-warning/40' },
   creating: { label: 'Creating…', tone: 'text-primary border-primary/40' },
@@ -44,9 +45,12 @@ export const ACTIONS = {
   },
 };
 
+// STOPPED: the game is not running and can be started (crashed = stopped after a crash loop).
+export const STOPPED = new Set(['stopped', 'crashed']);
+
 // lifecycleActions lists the actions that make sense for a status, in display order.
 export function lifecycleActions(status) {
-  if (status === 'stopped') return ['start'];
+  if (STOPPED.has(status)) return ['start'];
   if (ACTIVE.has(status)) return ['stop', 'restart', 'kill'];
   return [];
 }

@@ -306,3 +306,13 @@ func TestStates(t *testing.T) {
 		t.Fatalf("states = %+v", states)
 	}
 }
+
+func TestInspectReadsRestartCount(t *testing.T) {
+	r, d := newRuntime(t)
+	d.on("GET /containers/"+idRunning+"/json", http.StatusOK,
+		`{"Id":"`+idRunning+`","RestartCount":4,"State":{"Status":"restarting"},"Config":{"Labels":{"`+LabelManaged+`":"true","`+LabelServerID+`":"`+serverID+`"}}}`)
+	st, err := r.Inspect(context.Background(), idRunning, serverID)
+	if err != nil || st.RestartCount != 4 || st.Status() != domain.StatusRestarting {
+		t.Fatalf("inspect = %+v, %v", st, err)
+	}
+}

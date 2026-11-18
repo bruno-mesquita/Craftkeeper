@@ -4,6 +4,7 @@ package servers
 
 import (
 	"context"
+	"time"
 
 	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
 )
@@ -15,6 +16,14 @@ type ServerRepository interface {
 	Update(ctx context.Context, x domain.Server) error
 	Delete(ctx context.Context, id string) error
 	UsedPorts(ctx context.Context) (map[int]bool, error)
+	MarkCrashed(ctx context.Context, id string, at time.Time, restarts int) error
+	ClearCrash(ctx context.Context, id string) error
+}
+
+// EventSource blocks, calling emit for each managed container event, until ctx is cancelled
+// or the stream ends (always an error).
+type EventSource interface {
+	WatchEvents(ctx context.Context, emit func(domain.ContainerEvent)) error
 }
 
 // ContainerRuntime runs server containers. Every method that touches an existing container

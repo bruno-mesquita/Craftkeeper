@@ -49,7 +49,7 @@ Go **não** está instalado no host. Tudo roda em container pinado via `Makefile
 | `make test` | `go test ./...` (com `-race` exige CGO; rodar race em alvo separado se necessário) |
 | `make vet` / `make fmt` | `go vet ./...` / `gofmt -l -w .` |
 | `make css` | Tailwind v4 **standalone CLI** (binário pinado + SHA-256 em `tools/`, gitignored) gera `web/assets/css/app.css`, que é **commitado** |
-| `make run` | Roda o binário em `127.0.0.1:8090` com `MESQUITA_DATA_DIR` temporário |
+| `make run` | Roda o binário em `127.0.0.1:8090` com `DATA_DIR` temporário |
 
 Docker roda via `sudo`, que **não funciona dentro do Claude Code** (nem com `!`: sem TTY).
 O usuário roda build/test num terminal próprio, gravando a saída em `.cache/last-run.log`;

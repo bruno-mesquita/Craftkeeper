@@ -2,6 +2,7 @@
 // (WebSocket channel server:<id>, docs/WEBSOCKET.md), the file manager, backups, players, the
 // server list icon with the server.properties form, and the memory/CPU limits. Usage is polled over REST.
 import { api, ApiError } from '../api.js';
+import { openDialog } from '../dialog.js';
 import { h, toast } from '../dom.js';
 import { bytes, percent } from '../format.js';
 import { mountBackupManager } from '../backup-manager.js';
@@ -47,6 +48,10 @@ export function mount(root, { param: id }) {
   const usage = h('p', { class: 'text-xs text-muted tabular-nums' });
   const actions = h('div', { class: 'flex flex-wrap gap-2' });
   const notice = h('p', { class: 'text-warning', role: 'status', hidden: true });
+  const crashText = h('p', null);
+  const crashNotice = h('div', { class: 'card mb-4 flex flex-wrap items-center justify-between gap-3 border-danger/40 text-danger', role: 'status', hidden: true },
+    crashText,
+    h('button', { class: 'btn btn-ghost', type: 'button', onclick: () => showCrashReport() }, 'View crash report'));
 
   const conn = h('span', { class: 'badge', role: 'status' });
   const log = h('div', {
@@ -153,6 +158,7 @@ export function mount(root, { param: id }) {
           meta, usage)),
       actions),
     notice,
+    crashNotice,
     tablist,
     consolePanel,
     filesPanel,
@@ -174,6 +180,10 @@ export function mount(root, { param: id }) {
     if (server.failure) {
       notice.hidden = false;
       notice.textContent = `Creation failed: ${server.failure}. Delete this server from the Servers page and try again.`;
+    }
+    crashNotice.hidden = !(server.status === 'crashed' && server.crash);
+    if (!crashNotice.hidden) {
+      crashText.textContent = `The server kept crashing (${server.crash.restarts} automatic restarts within 10 minutes), so the panel stopped it at ${new Date(server.crash.at).toLocaleString()}. Check the console and the crash report, fix the cause, then start it again.`;
     }
     meta.textContent = `Minecraft ${gameVersion(server)} · port ${server.port} · ${bytes(server.memory_mb * 1048576)} · ${server.cpu_cores} CPU`;
     actions.replaceChildren(...lifecycleActions(server.status).map((a) =>
@@ -221,6 +231,26 @@ export function mount(root, { param: id }) {
       }
       notice.hidden = false;
       notice.textContent = `Could not load the server: ${err.message}`;
+    }
+  }
+
+  // showCrashReport opens the newest file of crash-reports/ (written by the game when it
+  // crashes; errors such as missing mod dependencies only appear in the console).
+  async function showCrashReport() {
+    const pre = h('pre', { class: 'max-h-[60vh] overflow-auto rounded-md border border-border bg-background p-3 font-mono text-xs whitespace-pre-wrap break-words' }, 'Loading…');
+    const close = h('button', { class: 'btn btn-primary', type: 'button' }, 'Close');
+    const dlg = openDialog({ title: 'Latest crash report', content: h('div', { class: 'flex w-[min(90vw,60rem)] flex-col gap-4' }, pre, h('div', { class: 'flex justify-end' }, close)) });
+    close.addEventListener('click', dlg.close);
+    try {
+      const { entries } = await api('GET', `/servers/${id}/files?path=crash-reports`);
+      const latest = entries.filter((e) => e.type === 'file').sort((a, b) => b.modified_at.localeCompare(a.modified_at))[0];
+      if (!latest) throw new ApiError(404, 'not_found', '');
+      const { content } = await api('GET', `/servers/${id}/files/content?path=${encodeURIComponent(`crash-reports/${latest.name}`)}`);
+      pre.textContent = `crash-reports/${latest.name}\n\n${content}`;
+    } catch (err) {
+      pre.textContent = err instanceof ApiError && err.status === 404
+        ? 'No crash report was written. The cause is usually in the console output (for example a missing mod dependency).'
+        : `Could not read the crash report: ${err.message}`;
     }
   }
 
@@ -276,6 +306,7 @@ export function mount(root, { param: id }) {
         if (server && server.status !== msg.payload.status) {
           server = { ...server, status: msg.payload.status };
           renderHeader();
+          if (server.status === 'crashed') load(); // fetch the crash record for the notice
         }
         break;
       case 'error':

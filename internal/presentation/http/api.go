@@ -29,13 +29,16 @@ type API struct {
 	players    *players.Service
 	ws         *wspres.Hub
 	static     fs.FS
-	log        *slog.Logger
+	// secureCookie marks the session cookie Secure even on plain HTTP requests: the panel
+	// sits behind a TLS-terminating proxy on loopback (tailscale serve).
+	secureCookie bool
+	log          *slog.Logger
 }
 
 func New(a *auth.Service, m *monitoring.Service, d *dashboard.Service, s *servers.Service, i *installers.Service,
-	f *files.Service, b *backups.Service, p *players.Service, ws *wspres.Hub, static fs.FS, log *slog.Logger) *API {
+	f *files.Service, b *backups.Service, p *players.Service, ws *wspres.Hub, static fs.FS, secureCookie bool, log *slog.Logger) *API {
 	return &API{auth: a, monitoring: m, dashboard: d, servers: s, installers: i, files: f, backups: b, players: p, ws: ws,
-		static: static, log: log}
+		static: static, secureCookie: secureCookie, log: log}
 }
 
 // Handler returns the complete HTTP handler with middleware applied.

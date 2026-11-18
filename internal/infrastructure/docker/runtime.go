@@ -256,8 +256,9 @@ func limits(memoryMB, cpuMillicores int) (memory, swap, nanoCPUs int64) {
 }
 
 type inspectResponse struct {
-	ID    string `json:"Id"`
-	State struct {
+	ID           string `json:"Id"`
+	RestartCount int    `json:"RestartCount"`
+	State        struct {
 		Status string `json:"Status"`
 		Health *struct {
 			Status string `json:"Status"`
@@ -280,7 +281,7 @@ func (r *Runtime) Inspect(ctx context.Context, id, serverID string) (domain.Cont
 	if x.ID != id || x.Config.Labels[LabelManaged] != managedLabelValue || x.Config.Labels[LabelServerID] != serverID {
 		return domain.ContainerState{}, fmt.Errorf("%w: container %s, server %s", domain.ErrNotManaged, id, serverID)
 	}
-	st := domain.ContainerState{ID: id, ServerID: serverID, State: x.State.Status}
+	st := domain.ContainerState{ID: id, ServerID: serverID, State: x.State.Status, RestartCount: x.RestartCount}
 	if x.State.Health != nil {
 		st.Health = x.State.Health.Status
 	}

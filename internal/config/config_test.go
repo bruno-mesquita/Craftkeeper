@@ -24,7 +24,7 @@ func TestDefaults(t *testing.T) {
 }
 
 func TestMultipleListenAddresses(t *testing.T) {
-	c, err := Load(env(map[string]string{"MESQUITA_LISTEN": "127.0.0.1:8090, 100.126.54.17:8090"}))
+	c, err := Load(env(map[string]string{"LISTEN": "127.0.0.1:8090, 100.126.54.17:8090"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,15 +35,16 @@ func TestMultipleListenAddresses(t *testing.T) {
 
 func TestInvalidValues(t *testing.T) {
 	for name, m := range map[string]map[string]string{
-		"no port":       {"MESQUITA_LISTEN": "127.0.0.1"},
-		"wildcard host": {"MESQUITA_LISTEN": ":8090"},
-		"relative dir":  {"MESQUITA_DATA_DIR": "data"},
-		"bad level":     {"MESQUITA_LOG_LEVEL": "loud"},
-		"ports text":    {"MESQUITA_GAME_PORTS": "many"},
-		"ports reverse": {"MESQUITA_GAME_PORTS": "25700-25601"},
-		"ports low":     {"MESQUITA_GAME_PORTS": "80-90"},
-		"ports high":    {"MESQUITA_GAME_PORTS": "65000-70000"},
-		"ports overlap": {"MESQUITA_GAME_PORTS": "8000-9000"},
+		"no port":       {"LISTEN": "127.0.0.1"},
+		"wildcard host": {"LISTEN": ":8090"},
+		"relative dir":  {"DATA_DIR": "data"},
+		"bad level":     {"LOG_LEVEL": "loud"},
+		"ports text":    {"GAME_PORTS": "many"},
+		"ports reverse": {"GAME_PORTS": "25700-25601"},
+		"ports low":     {"GAME_PORTS": "80-90"},
+		"ports high":    {"GAME_PORTS": "65000-70000"},
+		"ports overlap": {"GAME_PORTS": "8000-9000"},
+		"secure cookie": {"SECURE_COOKIE": "yes please"},
 	} {
 		if _, err := Load(env(m)); err == nil {
 			t.Errorf("%s: expected error", name)
@@ -52,12 +53,21 @@ func TestInvalidValues(t *testing.T) {
 }
 
 func TestGamePorts(t *testing.T) {
-	c, err := Load(env(map[string]string{"MESQUITA_GAME_PORTS": " 30000 - 30010 "}))
+	c, err := Load(env(map[string]string{"GAME_PORTS": " 30000 - 30010 "}))
 	if err != nil || c.GamePorts != (PortRange{First: 30000, Last: 30010}) {
 		t.Fatalf("range = %+v, %v", c.GamePorts, err)
 	}
-	c, err = Load(env(map[string]string{"MESQUITA_GAME_PORTS": "30000"}))
+	c, err = Load(env(map[string]string{"GAME_PORTS": "30000"}))
 	if err != nil || c.GamePorts != (PortRange{First: 30000, Last: 30000}) {
 		t.Fatalf("single port = %+v, %v", c.GamePorts, err)
+	}
+}
+
+func TestSecureCookie(t *testing.T) {
+	if c, err := Load(env(nil)); err != nil || c.SecureCookie {
+		t.Fatalf("default = %v, %v", c.SecureCookie, err)
+	}
+	if c, err := Load(env(map[string]string{"SECURE_COOKIE": " true "})); err != nil || !c.SecureCookie {
+		t.Fatalf("true = %v, %v", c.SecureCookie, err)
 	}
 }

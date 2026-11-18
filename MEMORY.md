@@ -33,7 +33,7 @@ O repositório está **no próprio servidor de produção**.
 Formato: decisão — motivo — consequência.
 
 - **D1 · Build em container Go pinado** — Go ausente no host e spec proíbe instalá-lo sem autorização. — Usuário roda `sudo make check` num terminal próprio (sudo não funciona dentro do Claude Code); o Makefile usa `SUDO_UID/SUDO_GID` para o container rodar como o usuário real (sem arquivos de root), caches em `.cache/`, saída em `.cache/last-run.log` (Claude lê esse arquivo).
-- **D2 · Porta padrão 8090, bind em `127.0.0.1` e `100.126.54.17`** — 8080 já está ocupada; painel não deve ser público. — `MESQUITA_LISTEN` aceita lista de endereços; nunca `0.0.0.0` por padrão.
+- **D2 · Porta padrão 8090, bind em `127.0.0.1` e `100.126.54.17`** — 8080 já está ocupada; painel não deve ser público. — `LISTEN` aceita lista de endereços; nunca `0.0.0.0` por padrão.
 - **D3 · Tailwind v4 via CLI standalone oficial, só em dev** — v4 não publica CSS precompilado com todas as utilities; `@tailwindcss/browser` não é recomendado em produção. — Binário pinado com SHA-256 em `tools/` (gitignored), `make css` gera `web/assets/css/app.css` commitado e embutido. Produção sem build, sem Node.
 - **D4 · SQLite com `modernc.org/sqlite`** — pure Go, permite `CGO_ENABLED=0`. — WAL + `busy_timeout`; um pool de escrita com 1 conexão e pool de leitura separado para não bloquear a aplicação.
 - **D5 · Docker Engine API via HTTP cru no unix socket** — SDK oficial traz árvore de dependências enorme; precisamos de ~10 endpoints. — Cliente fino em `internal/infrastructure/docker`, com allowlist e filtro por label.
@@ -50,7 +50,7 @@ Formato: decisão — motivo — consequência.
 - **D17 · Métricas só de containers `mesquita.managed=true`** (escolha do usuário, 2026-11-17) — spec §11. — Filtro no daemon **e** revalidação da label + formato do ID no cliente. Ainda não cruza `mesquita.server_id` com o banco: não existe tabela `servers` até a Fase 3, que adiciona esse cruzamento antes de qualquer ação.
 - **D18 · Sem histórico de métricas** (escolha do usuário) — só tempo real por polling REST (3 s); a Fase 4 levou só status e console para o WebSocket (escolha do usuário), métricas seguem por polling; sem goroutine de fundo. CPU/rede de container por delta entre coletas (primeira amostra = 0), mapa de amostras podado a cada coleta.
 - **D19 · Imagem de jogo `itzg/minecraft-server:2026.11.0` (Java 25) pinada por digest** (escolha do usuário, 2026-11-17) — baixa o jar sozinha via `TYPE`/`VERSION`; a Fase 7 vira ampliar a allowlist de loaders. Digest do índice multi-arch `sha256:8d5080d8dcd0a2629c2e4f248678373a337a40537ad6ef2857c7dbcda6e3eadd` (Docker Hub, verificado 2026-11-17). Java 25 e não 21: o Minecraft atual exige 25. Fase 7 trocou por uma imagem por Java (D45). Atualizar = trocar `gameImages` em `docker/runtime.go`.
-- **D20 · Portas de jogo `25601–25700` (`MESQUITA_GAME_PORTS`), bind em `0.0.0.0`** (escolha do usuário) — Crafty usa 25500–25600. Porta = pedida ou primeira livre (não usada no banco + `net.Listen` passa); UNIQUE no banco; `port_in_use` no start cobre a corrida.
+- **D20 · Portas de jogo `25601–25700` (`GAME_PORTS`), bind em `0.0.0.0`** (escolha do usuário) — Crafty usa 25500–25600. Porta = pedida ou primeira livre (não usada no banco + `net.Listen` passa); UNIQUE no banco; `port_in_use` no start cobre a corrida.
 - **D21 · Política fixa do container** — roda como uid:gid do painel (arquivos do painel → Fases 5/6); **nunca root**: com o painel como root (`sudo make run`) usa `1000:1000` e a pasta do servidor é `chown`ada para ele (sem capabilities, o entrypoint root do itzg falha no `chown`/troca de usuário e entra em loop de restart — visto em 2026-11-17), `CapDrop ALL`, `no-new-privileges`, swap = 0, PIDs 2048, logs 3 × 10 MB, `unless-stopped`, stop 60 s, `OpenStdin` (console da Fase 4 sem recriar), bridge padrão (sem `docker network`). Heap = `MaxRAMPercentage=75` com `MEMORY=""`: mudar limite + restart já vale. `ENABLE_RCON=false` (console usa stdin, D25).
 - **D22 · Status derivado, nunca persistido** — `running/starting/stopped/restarting/missing/unknown`; um container só conta se ID **e** label `server_id` batem com o banco. Toda operação mutante do `docker.Runtime` faz inspect e confere `mesquita.managed` + `server_id` antes de agir (D17 cumprido).
 - **D23 · Delete opt-in de arquivos** (escolha do usuário) — sem `delete_files=true` a pasta vai para `servers/.deleted/<id>-<unix>`. Remoção/arquivamento via `os.Root`. Container que sumiu ou não é mais nosso é só esquecido, nunca tocado.
@@ -81,6 +81,9 @@ Formato: decisão — motivo — consequência.
 - **D44 · Versões pinadas para modded** — Fabric/Forge/NeoForge exigem MC concreto (sem `LATEST`) e `loader_version` existente no catálogo; omitido = recomendado, gravado (migration `0004`). Sem isso o itzg re-resolve a versão a cada start e atualiza o loader sob os mods. Vanilla mantém `LATEST` e não depende da rede. Recomendado: Fabric = stable mais novo; Forge = promo `recommended` → `latest` → mais novo; NeoForge = mais novo sem `-beta`. NeoForge→MC: `21.1.x`→`1.21.1`, `21.0.x`→`1.21`; ≥ 26: `26.1.2.127`→`26.1.2`, `26.3.0.110`→`26.3`. Forge: entradas `<mc>-<build>` com sufixo extra (1.7.10, 1.10, …) são ignoradas. Trocar loader/versão de servidor existente e modpacks: fora do escopo.
 - **D45 · Imagem Java por versão do MC** (escolha do usuário: automático, sem override) — `≤1.16.5`→java8, `1.17–1.20.4`→java17, `1.20.5–1.21.x`→java21, `26.x`/`LATEST`→java25. Tags `2026.11.0-java8/17/21` + `2026.11.0` (= `-java25`), digests lidos do Docker Hub em 2026-11-17, em `docker.gameImages` (allowlist; java desconhecido nunca chega ao daemon). Pull só quando usada. Derivada da versão gravada, não persistida. Resolve a pendência de versões antigas da D19.
 - **D46 · Identidade visual "deepslate + lanterna"** (2026-11-17) — sair do visual shadcn (zinc + azul). Tokens em `web/styles/app.css`: fundo deepslate `#0f1316`, texto pergaminho `#ebe6d6`, acento âmbar `#f0b040`, sucesso musgo, perigo redstone. Fontes vendorizadas em `web/assets/fonts/` (Bricolage Grotesque + JetBrains Mono, SIL OFL, variáveis, só latin; CSP `font-src 'self'`). Medidor segmentado (`.meter`, máscara de blocos de 6px), badges com LED pulsante, logo "M" pixelado. Sem mudança de API/JS de comportamento.
+- **D54 · Crash loop por `RestartCount`, gravado no banco** (escolhas do usuário, 2026-11-18) — o `unless-stopped` deixava um servidor com mod quebrado reiniciando para sempre (Fase 7). — `servers.Service.Run` segue um 2º stream de Docker events; em cada `start` faz `inspect` e conta aumentos do `RestartCount` (o Docker só o incrementa em restarts da política). 3 em 10 min (constantes) → `MarkCrashed` (migration `0005`: `crashed_at`, `crash_restarts`) → audit `server.crash_loop` sem usuário → `Stop` em goroutine do `wg`. Status `crashed` é derivado (container parado + registro; D22 vale para o status), age como `stopped` em todo lugar; Start/Restart pelo painel limpam o registro. `Update` do repo não toca as colunas (só `MarkCrashed`/`ClearCrash`). UI: badge, aviso e dialog com o crash report mais novo via API de arquivos.
+- **D55 · HTTPS por `tailscale serve` + `SECURE_COOKIE`** (escolha do usuário, 2026-11-18) — o painel não termina TLS; o Tailscale renova o certificado. Produção escuta só em `127.0.0.1:8090` (sem HTTP paralelo pelo IP do Tailscale). Cookie `Secure` = `r.TLS != nil || SecureCookie`; cabeçalhos de proxy nunca são confiáveis, então atrás do serve todo cliente aparece como `127.0.0.1` (audit e limite de login por IP — aceito, um admin).
+- **D56 · Variáveis de ambiente sem prefixo** (pedido do usuário, 2026-11-18) — `LISTEN`, `DATA_DIR`, `DOCKER_SOCKET`, `LOG_LEVEL`, `GAME_PORTS`, `SECURE_COOKIE` (eram `MESQUITA_*`). — Em produção vêm só do `EnvironmentFile` do systemd, isolado; no `make run`/shell, uma variável genérica herdada (ex.: `LOG_LEVEL` de outra ferramenta) passa a valer para o painel.
 - **D10 · systemd com usuário dedicado `mesquita-panel`** — princípio do menor privilégio. — Precisa estar no grupo `docker` (root-equivalente) a partir da Fase 3; criação do usuário e grupo exige autorização no deploy.
 
 ---
@@ -110,6 +113,8 @@ Formato: decisão — motivo — consequência.
 | 5 | File manager | ✅ implementada, testada e verificada com servidor real (2026-11-17) | ver Fase 5 abaixo |
 | 6 | Backups | ✅ implementada, testada e verificada com servidor real (2026-11-17) | ver Fase 6 abaixo |
 | 7 | Game installers (Vanilla, Fabric, Forge, NeoForge; Paper/Purpur fora por escolha do usuário) | ✅ implementada, testada e verificada com servidor real (2026-11-17) | ver Fase 7 abaixo |
+| 8 | Pronto para produção (crash loop, HTTPS, deploy) | 🚧 crash loop testado e verificado com servidor real; falta deploy + HTTPS (2026-11-18) | ver Fase 8 abaixo |
+| 9–15 | Roadmap pós-Fase 7 (substituir o Crafty + features) | 📋 planejadas (2026-11-18) | ver "Roadmap pós-Fase 7" abaixo |
 
 Legenda de detalhe por feature (preencher ao implementar): **implementado** / **testado** / **planejado**.
 
@@ -146,7 +151,7 @@ Plano: `~/.claude/plans/memory-md-fa-a-o-planejamento-elegant-parnas.md`. Decis�
   inspect com checagem de posse) + `listManaged` compartilhado com stats; `filesystem.ServerDirs`
   (`os.Root`); `hostnet.TCPPortFree`; `application/servers` (create com rollback, lifecycle,
   update, delete, counts); rotas `/api/v1/servers…` (`docs/API.md`); `servers` no `/dashboard`;
-  `MESQUITA_GAME_PORTS`; frontend `pages/servers.js` + `dialog.js` (`<dialog>` nativo);
+  `GAME_PORTS`; frontend `pages/servers.js` + `dialog.js` (`<dialog>` nativo);
   contagem no Overview.
 - **Testes escritos:** `docker/runtime_test.go` (daemon falso), `sqlite/servers_test.go`,
   `filesystem/servers_test.go` (traversal, symlink), `servers/service_test.go` (rollback,
@@ -316,21 +321,41 @@ Plano: `~/.claude/plans/preciso-agora-que-tudo-cuddly-widget.md`.
 - **Verificação pendente:** não executada nesta implementação; falta validar compilation/contratos
   e um ZIP de server pack real no container.
 
-## Roadmap — Fase 1 (Foundation, referência)
+## Roadmap pós-Fase 7 (definido com o usuário em 2026-11-18)
 
-1. `go.mod` (`module github.com/<a definir>/mesquita-panel` ou nome local), `Makefile`, `.gitignore`; `git init` se autorizado.
-2. Config via env (arquivo `/etc/mesquita-panel/config.env` em produção): `MESQUITA_LISTEN`, `MESQUITA_DATA_DIR`, `MESQUITA_DOCKER_SOCKET`, `MESQUITA_LOG_LEVEL`. Validação na inicialização com erro claro.
-3. SQLite + runner de migrations embutidas; `migrations/0001_init.sql`: `schema_migrations`, `users`, `sessions`, `settings`, `audit_log`.
-4. Auth: setup inicial (só enquanto não existe admin; depois 404/403), login/logout/me, Argon2id, rate limit por IP + usuário, CSRF, expiração de sessão, troca de senha, audit.
-5. Servidor HTTP: middlewares (request id, slog, recover, security headers, auth, CSRF), `MaxBytesReader`, erros JSON padrão, shutdown gracioso; frontend via `embed`.
-6. Frontend: shell (sidebar + navegação), páginas setup / login / overview; tokens `@theme`; componentes base (button, card, input, toast, dialog).
-7. `GET /api/v1/system/stats` lendo `/proc` + `statfs` (CPU, RAM, disco, rede) — base do dashboard; cache curto.
-8. `deployments/systemd/mesquita-panel.service` com hardening (`NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `ReadWritePaths=/var/lib/mesquita-panel`, `PrivateTmp`) + `docs/INSTALL.md`, `docs/CONFIGURATION.md`, `docs/API.md` (parcial), `README.md`.
-9. Testes: migrations (aplica do zero + idempotência), Argon2id, sessões, rate limit, CSRF, setup bloqueado, contrato HTTP com `httptest`.
+Plano: `~/.claude/plans/vamos-fazer-um-novo-ticklish-quail.md`. Objetivo: **substituir o Crafty**,
+depois features. Multi-usuário fora por ora. Cada fase ganha plan mode próprio ao começar.
 
-**Aceite (spec §17):** compila para linux/amd64; roda sem Go; frontend servido pelo Go;
-admin consegue logar; banco persiste após restart; Crafty continua operando (verificar com
-`docker ps` com autorização do usuário, sem tocar nos containers).
+| Fase | Escopo | Status | Autorização |
+|---|---|---|---|
+| 8 | 🚧 Produção: detecção de crash/restart loop (Docker events, status `crashed` derivado, último `crash-reports/`); validar Players e modpack com MC real; deploy systemd (D10) + TLS `tailscale serve` | planejada | sudo, grupo docker, systemd |
+| 9 | Importar servidores do Crafty: cópia read-only da origem, detectar versão/loader, criar container; virada manual por servidor (porta: decidir) | planejada | leitura de `/home/bruno-mesquita/docker/` |
+| 10 | Console e eventos: histórico de comandos, busca, `logs/*.log.gz`; "Recent events" + página de audit log | planejada | — |
+| 11 | Tarefas agendadas (restart/comando/anúncio; generaliza D42) + webhook Discord (crash, start/stop, backup falho, join/leave via SLP) | planejada | — |
+| 12 | Trocar versão/loader com backup automático; mundos (reset, seed, import/export) + `ops.json` | planejada | — |
+| 13 | Mods via Modrinth (busca por loader/MC, SHA-512, updates, dependências) | planejada | — |
+| 14 | Histórico de métricas (revisa D18; 1 min, 24–48 h, SVG) + página global Backups | planejada | — |
+| 15 | Clonar servidor / templates + status público (ponto de exposição a decidir) | planejada | possivelmente exposição pública |
+
+## Fase 8 — estado (2026-11-18)
+
+Plano: `~/.claude/plans/vamos-fazer-um-novo-ticklish-quail.md`. Decisões D54–D55.
+- **Implementado:** `domain` (`StatusCrashed`, `StatusOf`, `Server.CrashedAt/CrashRestarts`,
+  `ContainerState.RestartCount`, `AuditServerCrashLoop`); migration `0005_server_crash`;
+  `sqlite.Servers.MarkCrashed/ClearCrash`; `docker.Runtime.Inspect` lê `RestartCount`;
+  `servers/crashguard.go` (`Run`, `observeStart`, `countRestart`) + `startOp` em Start/Restart;
+  `crashed` = parado em players/backups/Counts; `main.go` (goroutine do guard, termina antes do
+  `Close`); DTO `crash`; `SECURE_COOKIE`; frontend (`STATUS.crashed`, `STOPPED`, aviso +
+  dialog do crash report em `pages/server.js`, Resources editável); `make css`; docs API,
+  CONFIGURATION, INSTALL (seção 8b), `config.env.example`.
+- **Testes escritos:** `servers/crashguard_test.go`, `sqlite/servers_test.go` (Mark/Clear, Update
+  não apaga), `docker/runtime_test.go` (`RestartCount`), `config` (bool), `http/internal_test.go`
+  (cookie Secure, `crash` DTO), contrato `crash: null`. JS: `node --check`.
+- **Testado:** `sudo make check` passou (2026-11-18; binário 13,8 MB). O 1º run pegou um bug real:
+  `List` não derivava `crashed` (lista/Overview mostravam `stopped`) — corrigido.
+- **Verificado de verdade (usuário, 2026-11-18):** crash loop com servidor real funcionou.
+- **Pendente:** deploy systemd + grupo docker (autorização) + `tailscale serve` (conferir `Host` preservado
+  para o WS e conflito na 443); reboot; roteiros reais de Players e modpack.
 
 ## Aba Resources — RAM/CPU na página do servidor (2026-11-18)
 

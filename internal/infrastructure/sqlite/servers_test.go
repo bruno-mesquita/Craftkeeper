@@ -54,6 +54,30 @@ func TestServersRepository(t *testing.T) {
 	if err != nil || len(list) != 1 {
 		t.Fatalf("List = %v, %v", list, err)
 	}
+
+	// Crash record: written only by MarkCrashed/ClearCrash, untouched by Update.
+	crashed := now.Add(2 * time.Hour)
+	if err := r.MarkCrashed(ctx, a.ID, crashed, 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Update(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := r.ByID(ctx, a.ID); !got.CrashedAt.Equal(crashed) || got.CrashRestarts != 3 {
+		t.Fatalf("after MarkCrashed + Update = %v, %d", got.CrashedAt, got.CrashRestarts)
+	}
+	if list, _ := r.List(ctx); !list[0].CrashedAt.Equal(crashed) {
+		t.Fatalf("List crash = %v", list[0].CrashedAt)
+	}
+	if err := r.ClearCrash(ctx, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := r.ByID(ctx, a.ID); !got.CrashedAt.IsZero() || got.CrashRestarts != 0 {
+		t.Fatalf("after ClearCrash = %v, %d", got.CrashedAt, got.CrashRestarts)
+	}
+	if err := r.MarkCrashed(ctx, "nope", crashed, 3); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("MarkCrashed unknown = %v", err)
+	}
 	used, err := r.UsedPorts(ctx)
 	if err != nil || !used[25601] || len(used) != 1 {
 		t.Fatalf("UsedPorts = %v, %v", used, err)
