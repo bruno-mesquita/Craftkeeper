@@ -296,7 +296,6 @@ func (a *API) configureModpack(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) installModpack(w http.ResponseWriter, r *http.Request) {
-	extendDeadlines(w, createDeadline)
 	v, err := a.files.InstallModpack(r.Context(), r.PathValue("id"), actorOf(r))
 	if err != nil {
 		writeDomainError(w, a.log, err)

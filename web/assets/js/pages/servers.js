@@ -8,7 +8,7 @@ import { clearFormError, field, formValues, h, showFormError, toast } from '../d
 import { bytes, percent } from '../format.js';
 import { mountModpackManager } from '../modpack-manager.js';
 import { detectModpack } from '../modpack-zip.js';
-import { ACTIONS, ACTIVE, LOADERS, STATUS, confirmAction, gameVersion, lifecycleActions, runAction } from '../server-actions.js';
+import { ACTIONS, ACTIVE, CREATING_POLL_MS, LOADERS, STATUS, confirmAction, gameVersion, lifecycleActions, runAction } from '../server-actions.js';
 
 const REFRESH_MS = 3000;
 const EULA_URL = 'https://aka.ms/MinecraftEULA';
@@ -78,6 +78,7 @@ export function mount(root) {
   function createRow() {
     const name = h('a', { class: 'font-medium hover:underline' });
     const desc = h('span', { class: 'block max-w-xs truncate text-xs text-muted' });
+    const failure = h('span', { class: 'block max-w-xs text-xs text-danger' });
     const status = h('span', { class: 'badge' });
     const version = h('td', { class: 'py-3 pr-4 whitespace-nowrap' });
     const port = h('td', { class: 'py-3 pr-4 font-mono text-xs' });
@@ -85,7 +86,7 @@ export function mount(root) {
     const use = h('td', { class: 'py-3 pr-4 whitespace-nowrap tabular-nums text-muted' });
     const actions = h('div', { class: 'flex justify-end gap-1' });
     const tr = h('tr', { class: 'border-t border-border align-top' },
-      h('td', { class: 'py-3 pr-4' }, name, desc),
+      h('td', { class: 'py-3 pr-4' }, name, desc, failure),
       h('td', { class: 'py-3 pr-4' }, status),
       version, port, limits, use,
       h('td', { class: 'py-3' }, actions));
@@ -98,6 +99,8 @@ export function mount(root) {
         name.href = `#/servers/${s.id}`;
         desc.textContent = s.description;
         desc.hidden = !s.description;
+        failure.textContent = s.failure ? `Creation failed: ${s.failure}` : '';
+        failure.hidden = !s.failure;
         const st = STATUS[s.status] ?? STATUS.unknown;
         const working = busy.get(s.id);
         status.textContent = working ?? st.label;
@@ -125,8 +128,9 @@ export function mount(root) {
     const list = lifecycleActions(s.status).map((a) => btn(ACTIONS[a].label, async () => {
       if (await confirmAction(s, a)) act(s, a, ACTIONS[a].busy);
     }));
-    if (s.status !== 'unknown') list.push(btn('Edit', () => editDialog(s)));
-    if (s.status !== 'unknown') list.push(btn('Delete', () => deleteServer(s), 'btn-ghost text-danger'));
+    // A server being created has nothing to act on yet; a failed one can only be deleted.
+    if (!['unknown', 'creating', 'create_failed'].includes(s.status)) list.push(btn('Edit', () => editDialog(s)));
+    if (!['unknown', 'creating'].includes(s.status)) list.push(btn('Delete', () => deleteServer(s), 'btn-ghost text-danger'));
     return list;
   }
 
@@ -311,11 +315,19 @@ export function mount(root) {
     loader.addEventListener('change', loadVersions);
     loadVersions();
 
-    const { close } = openDialog({ title: 'New server', content: form });
+    let closed = false;
+    let pollTimer = null;
+    const { close } = openDialog({
+      title: 'New server', content: form,
+      onClose: () => { closed = true; clearTimeout(pollTimer); },
+    });
     cancel.addEventListener('click', close);
     form.querySelector('[name="name"]').focus();
     submitForm(form, button, 'Creating…', async (v) => {
       const pack = form.querySelector('[name="modpack"]').files?.[0];
+      // The panel answers at once and builds the server in the background (status
+      // "creating"). Without a modpack it starts by itself when ready; with one, the
+      // modpack installer starts it.
       const created = await api('POST', '/servers', {
         name: v.name.trim(),
         description: v.description.trim(),
@@ -326,22 +338,46 @@ export function mount(root) {
         cpu_cores: Number(v.cpu_cores),
         port: v.port ? Number(v.port) : 0,
         accept_eula: v.accept_eula === 'on',
+        start: !pack,
       });
       if (!pack) {
-        toast(`${created.name} created on port ${created.port}. Start it when ready.`, 'success');
+        toast(`${created.name} is being created on port ${created.port}. It starts when ready.`, 'success');
         return;
       }
-      // The server exists now: keep the dialog and continue with the modpack step.
-      toast(`${created.name} created on port ${created.port}.`, 'success');
+      // Keep the dialog: wait for the build, then continue with the modpack step.
       const root = h('div');
       const done = h('button', { class: 'btn btn-ghost', type: 'button' }, 'Close');
       done.addEventListener('click', close);
+      const waiting = h('p', { class: 'text-sm text-muted', role: 'status' },
+        `Creating ${created.name}… The first server of each Java version downloads its game image, which can take a few minutes. You can close this dialog and import the modpack later from the server's Modpack tab.`);
+      root.append(waiting);
       form.replaceChildren(root, h('div', { class: 'flex justify-end' }, done));
-      mountModpackManager(root, {
-        id: created.id,
-        initialFile: pack,
-        onInstall: () => { close(); location.hash = `#/servers/${created.id}`; },
-      });
+      const poll = async () => {
+        if (closed) return;
+        let s;
+        try {
+          s = await api('GET', `/servers/${created.id}`);
+        } catch {
+          s = { status: 'creating' }; // transient: try again
+        }
+        if (closed) return;
+        if (s.status === 'creating') {
+          pollTimer = setTimeout(poll, CREATING_POLL_MS);
+          return;
+        }
+        if (s.status === 'create_failed') {
+          waiting.className = 'text-sm text-danger';
+          waiting.textContent = `Could not create ${created.name}: ${s.failure}`;
+          return;
+        }
+        root.replaceChildren();
+        mountModpackManager(root, {
+          id: created.id,
+          initialFile: pack,
+          onInstall: () => { close(); location.hash = `#/servers/${created.id}`; },
+        });
+      };
+      poll();
       return 'stay-open';
     }, close);
   }

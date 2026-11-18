@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
 )
@@ -113,6 +114,28 @@ func validServer(name string) map[string]any {
 	return map[string]any{"name": name, "version": "1.21.4", "memory_mb": 2048, "cpu_cores": 1.5, "accept_eula": true}
 }
 
+// createAndWait creates a server, checks the 202 creating answer and waits until the
+// background build ends. It returns the server as GET reports it then.
+func (c *client) createAndWait(req map[string]any) map[string]any {
+	c.t.Helper()
+	res, body := c.do("POST", "/api/v1/servers", req, nil)
+	expect(c.t, res, body, http.StatusAccepted, "")
+	if body["status"] != "creating" || body["container_id"] != "" {
+		c.t.Fatalf("create answer: %v", body)
+	}
+	id := body["id"].(string)
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		res, body = c.do("GET", "/api/v1/servers/"+id, nil, nil)
+		expect(c.t, res, body, http.StatusOK, "")
+		if body["status"] != "creating" {
+			return body
+		}
+		if time.Now().After(deadline) {
+			c.t.Fatalf("server %s still creating", id)
+		}
+	}
+}
+
 func TestServersRequireAuthAndCSRF(t *testing.T) {
 	c := newServer(t)
 	res, body := c.do("GET", "/api/v1/servers", nil, nil)
@@ -141,11 +164,10 @@ func TestServerLifecycleContract(t *testing.T) {
 		t.Fatalf("empty list must be an empty array: %v", body)
 	}
 
-	res, body = c.do("POST", "/api/v1/servers", validServer("Survival"), nil)
-	expect(t, res, body, http.StatusCreated, "")
+	body = c.createAndWait(validServer("Survival"))
 	id, _ := body["id"].(string)
 	if !domain.ValidServerID(id) || body["name"] != "Survival" || body["game"] != "minecraft" || body["loader"] != "vanilla" ||
-		body["version"] != "1.21.4" || body["status"] != "stopped" || body["memory_mb"] != float64(2048) ||
+		body["version"] != "1.21.4" || body["status"] != "stopped" || body["failure"] != "" || body["memory_mb"] != float64(2048) ||
 		body["cpu_cores"] != 1.5 || body["port"] != float64(25601) || body["description"] != "" || body["loader_version"] != "" {
 		t.Fatalf("created: %v", body)
 	}
@@ -236,8 +258,7 @@ func TestServerErrors(t *testing.T) {
 	res, body = c.do("POST", "/api/v1/servers", bad, nil)
 	expect(t, res, body, http.StatusBadRequest, "invalid_json")
 
-	res, body = c.do("POST", "/api/v1/servers", validServer("S"), nil)
-	expect(t, res, body, http.StatusCreated, "")
+	body = c.createAndWait(validServer("S"))
 	id := body["id"].(string)
 	res, body = c.do("POST", "/api/v1/servers", validServer("s"), nil)
 	expect(t, res, body, http.StatusUnprocessableEntity, "validation_failed")

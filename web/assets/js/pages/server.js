@@ -150,6 +150,10 @@ export function mount(root, { param: id }) {
     const st = STATUS[server.status] ?? STATUS.unknown;
     status.textContent = busy ?? st.label;
     status.className = `badge whitespace-nowrap ${busy ? 'text-primary border-primary/40' : st.tone}`;
+    if (server.failure) {
+      notice.hidden = false;
+      notice.textContent = `Creation failed: ${server.failure}. Delete this server from the Servers page and try again.`;
+    }
     meta.textContent = `Minecraft ${gameVersion(server)} · port ${server.port} · ${bytes(server.memory_mb * 1048576)} · ${server.cpu_cores} CPU`;
     actions.replaceChildren(...lifecycleActions(server.status).map((a) =>
       h('button', { class: `btn ${a === 'start' ? 'btn-primary' : 'btn-ghost'}`, type: 'button', disabled: Boolean(busy), onclick: () => act(a) },
@@ -196,6 +200,8 @@ export function mount(root, { param: id }) {
   }
 
   async function refreshUsage() {
+    // No container events exist before the build ends: re-read the server meanwhile.
+    if (server?.status === 'creating') load();
     try {
       const { containers } = await api('GET', '/system/containers');
       const u = containers.find((c) => c.server_id === id);

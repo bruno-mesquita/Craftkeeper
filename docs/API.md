@@ -34,7 +34,7 @@ unless marked *planned*.
 | 404 | `not_found` | Unknown endpoint or resource |
 | 409 | `setup_completed` | Setup already done |
 | 409 | `server_running` | The server must be stopped (memory/CPU limits, restore) |
-| 409 | `server_busy` | The server is starting or restarting; retry shortly |
+| 409 | `server_busy` | The server is being created, starting or restarting; retry shortly |
 | 409 | `backup_in_progress` | A backup or restore of this server is in progress |
 | 409 | `backup_not_ready` | The backup is still being made, or failed |
 | 409 | `container_missing` | The server's container no longer exists; only deletion works |
@@ -157,14 +157,18 @@ its database; other containers on the host are never listed or touched.
 {
   "id": "26 characters [A-Z2-7]", "name": "Survival", "description": "",
   "game": "minecraft", "loader": "forge", "version": "1.20.1", "loader_version": "47.3.0",
-  "status": "running",
+  "status": "running", "failure": "",
   "memory_mb": 2048, "cpu_cores": 1.5, "port": 25601,
   "container_id": "64-char hex", "created_at": "...", "updated_at": "..."
 }
 ```
 `status` is read from Docker on every request, never stored:
 `running`, `starting` (running, health check not passed yet), `stopped`, `restarting`,
-`missing` (container gone or no longer labelled for this server), `unknown` (Docker unreachable).
+`missing` (container gone or no longer labelled for this server), `unknown` (Docker unreachable),
+`creating` (the panel is still pulling the image and creating the container; `container_id` is
+empty) and `create_failed` (the background creation failed; `failure` says why, nothing but the
+record is left, and only `DELETE` works). `failure` is empty in every other status. Servers
+whose creation did not finish are removed when the panel restarts.
 `cpu_cores` is a number (0.5 = half a core); it is stored with 0.001-core precision.
 `loader` is `vanilla`, `fabric`, `forge` or `neoforge`. `version` is the Minecraft release
 (`"LATEST"` only for vanilla: it follows the newest release on every start). `loader_version`
@@ -177,7 +181,7 @@ An `{id}` that is not a valid server ID answers `404 not_found` without any look
 list is still returned, with status `unknown`.
 
 ### `POST /servers` — auth + CSRF
-Body: `{"name", "description"?, "loader"?, "version"?, "loader_version"?, "memory_mb", "cpu_cores", "port"?, "accept_eula"}`.
+Body: `{"name", "description"?, "loader"?, "version"?, "loader_version"?, "memory_mb", "cpu_cores", "port"?, "accept_eula", "start"?}`.
 - `name`: 1–48 printable characters, no surrounding spaces, unique (case-insensitive).
 - `description`: up to 500 characters.
 - `loader`: `vanilla` (default), `fabric`, `forge` or `neoforge`.
@@ -188,13 +192,16 @@ Body: `{"name", "description"?, "loader"?, "version"?, "loader_version"?, "memor
 - `memory_mb`: 512–16384. `cpu_cores`: 0.5 up to the number of host CPUs.
 - `port`: within the configured game port range; omitted or `0` picks the first free one.
 - `accept_eula`: must be `true` (the Minecraft EULA).
+- `start`: `true` starts the server as soon as its container exists. Default `false`.
 
-Modded servers are checked against the official version lists (cached for 1 hour). Pulls the
-pinned game image for the release's Java version if needed (the first creation can take
-minutes), creates the data directory and a **stopped** container. Forge and NeoForge run their
-installer on the first start. On failure nothing is left behind.
-`201 Server` · `422` (`field` names the input) · `502 docker_error` · `503 docker_unavailable` ·
-`503 installer_unavailable` (modded only).
+The input, the port and (for modded servers) the official version lists (cached for 1 hour) are
+checked before answering; the server is then recorded and returned with status `creating`.
+In the background the panel pulls the pinned game image for the release's Java version if
+needed (the first creation can take minutes), creates the data directory and a **stopped**
+container, then becomes `stopped` (or starts, with `start`). If that fails, the directory and
+container are removed and the server shows `create_failed`. Forge and NeoForge run their
+installer on the first start. Poll `GET /servers/{id}` (or the list) to follow it.
+`202 Server` · `422` (`field` names the input) · `503 installer_unavailable` (modded only).
 
 ### `GET /servers/{id}` — auth
 `200 Server` · `404`.
@@ -203,21 +210,23 @@ installer on the first start. On failure nothing is left behind.
 Body: any of `{"name", "description", "memory_mb", "cpu_cores"}`. Name and description can
 change at any time; limits only while the server is stopped. A new memory limit sets the heap
 on the next start.
-`200 Server` · `404` · `409 server_running` · `409 container_missing` · `422`.
+`200 Server` · `404` · `409 server_running` · `409 server_busy` (creating) ·
+`409 container_missing` (also `create_failed`) · `422`.
 
 ### `POST /servers/{id}/start|stop|restart|kill` — auth + CSRF
 `stop` and `restart` ask the game to save and stop, and kill it after 60 s. `kill` stops it
 immediately (unsaved changes are lost). Starting a running server or stopping/killing a
 stopped one is not an error.
-`200 Server` · `404` · `409 container_missing` · `409 container_not_managed` ·
-`409 port_in_use` (start) · `502` · `503`.
+`200 Server` · `404` · `409 server_busy` (creating) · `409 container_missing` (also
+`create_failed`) · `409 container_not_managed` · `409 port_in_use` (start) · `502` · `503`.
 
 ### `DELETE /servers/{id}?delete_files=true|false` — auth + CSRF
 Stops the server gracefully, removes its container, then deletes its files and backups
 (`delete_files=true`) or moves them to `servers/.deleted/<id>-<unix time>` and
 `backups/.deleted/<id>-<unix time>` (default), and removes the record. A container that is already gone, or that no longer carries this server's
-labels, is left alone and only forgotten.
-`204` · `404` · `422` (invalid `delete_files`) · `502` · `503`.
+labels, is left alone and only forgotten. A `create_failed` server is just forgotten; one
+still `creating` answers `409 server_busy`.
+`204` · `404` · `409 server_busy` · `422` (invalid `delete_files`) · `502` · `503`.
 
 ## Installers
 

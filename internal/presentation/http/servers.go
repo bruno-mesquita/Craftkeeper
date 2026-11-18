@@ -10,12 +10,9 @@ import (
 	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
 )
 
-// Deadlines for requests that wait on slow Docker operations. The server-wide timeouts
-// (main.go) are too short for an image pull or a graceful game stop.
-const (
-	createDeadline = 12 * time.Minute // image pull (10 min) + container creation
-	stopDeadline   = 3 * time.Minute  // graceful stop (60 s) + removal, with margin
-)
+// Deadline for requests that wait on a graceful game stop, longer than the server-wide
+// timeouts (main.go). Server creation does not wait: the image pull runs in the background.
+const stopDeadline = 3 * time.Minute // graceful stop (60 s) + removal, with margin
 
 type serverDTO struct {
 	ID            string  `json:"id"`
@@ -26,6 +23,7 @@ type serverDTO struct {
 	Version       string  `json:"version"`
 	LoaderVersion string  `json:"loader_version"`
 	Status        string  `json:"status"`
+	Failure       string  `json:"failure"`
 	MemoryMB      int     `json:"memory_mb"`
 	CPUCores      float64 `json:"cpu_cores"`
 	Port          int     `json:"port"`
@@ -37,7 +35,7 @@ type serverDTO struct {
 func toServerDTO(v servers.View) serverDTO {
 	return serverDTO{
 		ID: v.ID, Name: v.Name, Description: v.Description, Game: v.Game, Loader: v.Loader, Version: v.Version,
-		LoaderVersion: v.LoaderVersion, Status: string(v.Status), MemoryMB: v.MemoryMB, CPUCores: float64(v.CPUMillicores) / 1000, Port: v.Port,
+		LoaderVersion: v.LoaderVersion, Status: string(v.Status), Failure: v.Failure, MemoryMB: v.MemoryMB, CPUCores: float64(v.CPUMillicores) / 1000, Port: v.Port,
 		ContainerID: v.ContainerID, CreatedAt: rfc3339(v.CreatedAt), UpdatedAt: rfc3339(v.UpdatedAt),
 	}
 }
@@ -99,6 +97,7 @@ func (a *API) createServer(w http.ResponseWriter, r *http.Request) {
 		CPUCores      float64 `json:"cpu_cores"`
 		Port          int     `json:"port"`
 		AcceptEULA    bool    `json:"accept_eula"`
+		Start         bool    `json:"start"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -109,17 +108,18 @@ func (a *API) createServer(w http.ResponseWriter, r *http.Request) {
 	if req.Version == "" && req.Loader == domain.LoaderVanilla {
 		req.Version = domain.MinecraftLatest
 	}
-	extendDeadlines(w, createDeadline)
 	v, err := a.servers.Create(r.Context(), servers.CreateInput{
 		Name: req.Name, Description: req.Description, Loader: req.Loader, Version: req.Version,
 		LoaderVersion: req.LoaderVersion, MemoryMB: req.MemoryMB,
 		CPUMillicores: millicores(req.CPUCores), Port: req.Port, AcceptEULA: req.AcceptEULA,
+		Start: req.Start,
 	}, actorOf(r))
 	if err != nil {
 		writeDomainError(w, a.log, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, toServerDTO(v))
+	// The image pull and container creation continue in the background.
+	writeJSON(w, http.StatusAccepted, toServerDTO(v))
 }
 
 func (a *API) getServer(w http.ResponseWriter, r *http.Request) {

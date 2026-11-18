@@ -10,7 +10,12 @@ export const STATUS = {
   stopped: { label: 'Stopped', tone: 'text-muted' },
   missing: { label: 'Container missing', tone: 'text-danger border-danger/40' },
   unknown: { label: 'Unknown', tone: 'text-warning border-warning/40' },
+  creating: { label: 'Creating…', tone: 'text-primary border-primary/40' },
+  create_failed: { label: 'Create failed', tone: 'text-danger border-danger/40' },
 };
+
+// How often a page re-reads a server that is still being created.
+export const CREATING_POLL_MS = 3000;
 
 export const LOADERS = { vanilla: 'Vanilla', fabric: 'Fabric', forge: 'Forge', neoforge: 'NeoForge' };
 

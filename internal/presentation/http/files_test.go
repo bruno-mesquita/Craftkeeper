@@ -53,9 +53,7 @@ func (c *client) upload(path string, files ...upload) (*http.Response, map[strin
 
 func (c *client) createServer() (id, dir string) {
 	c.t.Helper()
-	res, body := c.do("POST", "/api/v1/servers", validServer("Files"), nil)
-	expect(c.t, res, body, http.StatusCreated, "")
-	id = body["id"].(string)
+	id = c.createAndWait(validServer("Files"))["id"].(string)
 	return id, filepath.Join(c.serversDir, id)
 }
 

@@ -105,6 +105,12 @@ func run() error {
 			FirstPort: cfg.GamePorts.First, LastPort: cfg.GamePorts.Last,
 			HostCPUs: runtime.NumCPU(), PortFree: hostnet.TCPPortFree,
 		})
+	// Before serving: forget creations a previous run did not finish. Creations started from
+	// now on run in the background and are interrupted (then recovered) at shutdown.
+	if err := serversSvc.Recover(ctx); err != nil {
+		return err
+	}
+	defer serversSvc.Close()
 	dashboardSvc := dashboard.NewService(dockerClient, serversSvc, auditLog)
 	serverFiles := filesystem.NewServerFiles(cfg.ServersDir(), uid, gid)
 	filesSvc := files.NewService(serverFiles, serversSvc, auditLog)

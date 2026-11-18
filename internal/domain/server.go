@@ -38,6 +38,10 @@ const (
 	StatusRestarting ServerStatus = "restarting"
 	StatusMissing    ServerStatus = "missing" // the container no longer exists
 	StatusUnknown    ServerStatus = "unknown" // Docker is unreachable
+
+	// While the panel builds a new server in the background (image pull, directory, container).
+	StatusCreating     ServerStatus = "creating"
+	StatusCreateFailed ServerStatus = "create_failed" // nothing left but the record; delete it
 )
 
 // ContainerState is the runtime state of a managed container.

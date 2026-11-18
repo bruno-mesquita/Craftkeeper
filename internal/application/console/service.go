@@ -207,7 +207,7 @@ func (s *Service) followOnce(ctx context.Context, f *feed) error {
 		return err
 	}
 	switch view.Status {
-	case domain.StatusMissing:
+	case domain.StatusMissing, domain.StatusCreating, domain.StatusCreateFailed: // no container (yet)
 		return domain.ErrContainerMissing
 	case domain.StatusUnknown:
 		return domain.ErrDockerUnavailable

@@ -184,8 +184,10 @@ func backupMode(st domain.ServerStatus) (online bool, err error) {
 		return true, nil
 	case domain.StatusStopped, domain.StatusMissing:
 		return false, nil
-	case domain.StatusStarting, domain.StatusRestarting:
+	case domain.StatusStarting, domain.StatusRestarting, domain.StatusCreating:
 		return false, domain.ErrServerBusy
+	case domain.StatusCreateFailed:
+		return false, domain.ErrContainerMissing
 	}
 	return false, domain.ErrDockerUnavailable
 }

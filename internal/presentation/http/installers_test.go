@@ -97,16 +97,15 @@ func TestCreateModdedServerContract(t *testing.T) {
 
 	req := validServer("Modded")
 	req["loader"], req["version"] = "forge", "1.20.1"
-	res, body := c.do("POST", "/api/v1/servers", req, nil)
-	expect(t, res, body, http.StatusCreated, "")
+	body := c.createAndWait(req)
+	var res *http.Response
 	if body["loader"] != "forge" || body["version"] != "1.20.1" || body["loader_version"] != "47.3.0" {
 		t.Fatalf("created: %v", body)
 	}
 
 	req = validServer("Pinned")
 	req["loader"], req["version"], req["loader_version"] = "forge", "1.20.1", "47.4.5"
-	res, body = c.do("POST", "/api/v1/servers", req, nil)
-	expect(t, res, body, http.StatusCreated, "")
+	body = c.createAndWait(req)
 	if body["loader_version"] != "47.4.5" {
 		t.Fatalf("pinned: %v", body)
 	}

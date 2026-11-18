@@ -208,6 +208,19 @@ func newEnv(t *testing.T) *env {
 	return e
 }
 
+// create creates a server and waits for its background build, returning its final view.
+func (e *env) create(ctx context.Context, in CreateInput, actor Actor) (View, error) {
+	v, err := e.svc.Create(ctx, in, actor)
+	if err != nil {
+		return v, err
+	}
+	if v.Status != domain.StatusCreating || v.ContainerID != "" {
+		return v, errors.New("Create must return the server in creating, without a container")
+	}
+	e.svc.wg.Wait()
+	return e.svc.Get(ctx, v.ID)
+}
+
 func validInput(name string) CreateInput {
 	return CreateInput{Name: name, Loader: domain.LoaderVanilla, Version: "LATEST", MemoryMB: 2048, CPUMillicores: 2000, AcceptEULA: true}
 }
@@ -225,7 +238,7 @@ func TestCreateAssignsPortsAndBuildsContainer(t *testing.T) {
 	ctx := context.Background()
 	e.busy[25601] = true // taken by another program
 
-	v, err := e.svc.Create(ctx, validInput("Survival"), e.actor)
+	v, err := e.create(ctx, validInput("Survival"), e.actor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,15 +257,15 @@ func TestCreateAssignsPortsAndBuildsContainer(t *testing.T) {
 		t.Fatalf("data dir: %v", err)
 	}
 
-	v2, err := e.svc.Create(ctx, validInput("Creative"), e.actor)
+	v2, err := e.create(ctx, validInput("Creative"), e.actor)
 	if err != nil || v2.Port != 25603 {
 		t.Fatalf("second = %+v, %v", v2, err)
 	}
-	if _, err := e.svc.Create(ctx, validInput("Third"), e.actor); fieldOf(err) != "port" {
+	if _, err := e.create(ctx, validInput("Third"), e.actor); fieldOf(err) != "port" {
 		t.Fatalf("range exhausted: err = %v", err)
 	}
 	e.busy[25601] = false // a port is free again, so the duplicate name is what fails
-	if _, err := e.svc.Create(ctx, validInput("survival"), e.actor); fieldOf(err) != "name" {
+	if _, err := e.create(ctx, validInput("survival"), e.actor); fieldOf(err) != "name" {
 		t.Fatalf("duplicate name (case-insensitive): err = %v", err)
 	}
 	if entries, _ := os.ReadDir(e.dir); len(entries) != 2 {
@@ -275,7 +288,7 @@ func TestCreateValidation(t *testing.T) {
 	for field, mutate := range cases {
 		in := validInput("X")
 		mutate(&in)
-		if _, err := e.svc.Create(context.Background(), in, e.actor); fieldOf(err) != field {
+		if _, err := e.create(context.Background(), in, e.actor); fieldOf(err) != field {
 			t.Errorf("%s: err = %v", field, err)
 		}
 	}
@@ -301,7 +314,7 @@ func TestCreateModded(t *testing.T) {
 	for _, c := range cases {
 		in := validInput(c.name)
 		in.Loader, in.Version, in.LoaderVersion = c.loader, c.mc, c.lv
-		v, err := e.svc.Create(ctx, in, e.actor)
+		v, err := e.create(ctx, in, e.actor)
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
@@ -321,7 +334,7 @@ func TestCreateModded(t *testing.T) {
 	}
 
 	// Vanilla gets no loader variable and the newest Java for LATEST.
-	v, err := e.svc.Create(ctx, validInput("Vanilla"), e.actor)
+	v, err := e.create(ctx, validInput("Vanilla"), e.actor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,7 +351,7 @@ func TestCreateModded(t *testing.T) {
 	in.Loader, in.Version, in.LoaderVersion = domain.LoaderForge, "1.20.1", "47.9.9"
 	bad["loader_version"] = in
 	for field, in := range bad {
-		if _, err := e.svc.Create(ctx, in, e.actor); fieldOf(err) != field {
+		if _, err := e.create(ctx, in, e.actor); fieldOf(err) != field {
 			t.Errorf("%s: err = %v", field, err)
 		}
 	}
@@ -346,7 +359,7 @@ func TestCreateModded(t *testing.T) {
 	e.src.down = true
 	in = validInput("Down")
 	in.Loader, in.Version = domain.LoaderNeoForge, "1.21.1"
-	if _, err := e.svc.Create(ctx, in, e.actor); !errors.Is(err, domain.ErrInstallerUnavailable) {
+	if _, err := e.create(ctx, in, e.actor); !errors.Is(err, domain.ErrInstallerUnavailable) {
 		t.Fatalf("source down: err = %v", err)
 	}
 	if list, _ := e.repo.List(ctx); len(list) != 4 {
@@ -354,30 +367,101 @@ func TestCreateModded(t *testing.T) {
 	}
 }
 
-func TestCreateRollsBackEveryStep(t *testing.T) {
+func TestCreateFailureKeepsRecord(t *testing.T) {
 	boom := errors.New("boom")
+	ctx := context.Background()
 	for _, op := range []string{"pull", "create"} {
 		e := newEnv(t)
 		e.rt.fail[op] = boom
-		if _, err := e.svc.Create(context.Background(), validInput("S"), e.actor); !errors.Is(err, boom) {
-			t.Fatalf("%s: err = %v", op, err)
+		v, err := e.create(ctx, validInput("S"), e.actor)
+		if err != nil || v.Status != domain.StatusCreateFailed || v.Failure != "boom" {
+			t.Fatalf("%s: view %+v, err %v", op, v, err)
 		}
-		list, _ := e.repo.List(context.Background())
 		entries, _ := os.ReadDir(e.dir)
-		if len(list) != 0 || len(entries) != 0 || len(e.rt.containers) != 0 {
-			t.Fatalf("%s: leftovers rows=%d dirs=%d containers=%d", op, len(list), len(entries), len(e.rt.containers))
+		if len(entries) != 0 || len(e.rt.containers) != 0 {
+			t.Fatalf("%s: leftovers dirs=%d containers=%d", op, len(entries), len(e.rt.containers))
 		}
-		events, _ := e.auditDB.Recent(context.Background(), 1)
+		if list, _ := e.svc.List(ctx); len(list) != 1 || list[0].Status != domain.StatusCreateFailed {
+			t.Fatalf("%s: list = %+v", op, list)
+		}
+		events, _ := e.auditDB.Recent(ctx, 1)
 		if len(events) != 1 || events[0].Action != domain.AuditServerCreate || events[0].Success {
 			t.Fatalf("%s: audit = %+v", op, events)
 		}
+		if _, err := e.svc.Start(ctx, v.ID, e.actor); !errors.Is(err, domain.ErrContainerMissing) {
+			t.Fatalf("%s: start of a failed creation: %v", op, err)
+		}
+		if err := e.svc.Delete(ctx, v.ID, false, e.actor); err != nil {
+			t.Fatalf("%s: delete: %v", op, err)
+		}
+		if list, _ := e.svc.List(ctx); len(list) != 0 {
+			t.Fatalf("%s: not deleted: %+v", op, list)
+		}
+	}
+}
+
+func TestCreateStartsWhenAsked(t *testing.T) {
+	e := newEnv(t)
+	in := validInput("S")
+	in.Start = true
+	v, err := e.create(context.Background(), in, e.actor)
+	if err != nil || v.Status != domain.StatusRunning {
+		t.Fatalf("view %+v, err %v", v, err)
+	}
+	if calls := strings.Join(e.rt.calls, ","); !strings.Contains(calls, "create,start") {
+		t.Fatalf("calls = %s", calls)
+	}
+}
+
+func TestCreatingServerIsBusy(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	e.svc.provisionLock.Lock() // hold the build before it starts
+	v, err := e.svc.Create(ctx, validInput("S"), e.actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := e.svc.Get(ctx, v.ID); got.Status != domain.StatusCreating {
+		t.Fatalf("status = %s", got.Status)
+	}
+	name := "Other"
+	for what, err := range map[string]error{
+		"start":  func() error { _, err := e.svc.Start(ctx, v.ID, e.actor); return err }(),
+		"update": func() error { _, err := e.svc.Update(ctx, v.ID, UpdateInput{Name: &name}, e.actor); return err }(),
+		"delete": e.svc.Delete(ctx, v.ID, true, e.actor),
+	} {
+		if !errors.Is(err, domain.ErrServerBusy) {
+			t.Errorf("%s while creating: %v", what, err)
+		}
+	}
+	e.svc.provisionLock.Unlock()
+	e.svc.wg.Wait()
+	if got, _ := e.svc.Get(ctx, v.ID); got.Status != domain.StatusStopped || got.ContainerID == "" {
+		t.Fatalf("after build: %+v", got)
+	}
+}
+
+func TestRecoverRemovesUnfinishedCreations(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	done, _ := e.create(ctx, validInput("Done"), e.actor)
+	e.rt.fail["create"] = errors.New("boom")
+	failed, _ := e.create(ctx, validInput("Failed"), e.actor)
+	if err := e.svc.Recover(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.repo.ByID(ctx, failed.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("unfinished creation kept: %v", err)
+	}
+	if _, err := e.repo.ByID(ctx, done.ID); err != nil {
+		t.Fatalf("finished server removed: %v", err)
 	}
 }
 
 func TestLifecycleAndStatus(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	v, err := e.svc.Create(ctx, validInput("S"), e.actor)
+	v, err := e.create(ctx, validInput("S"), e.actor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,8 +510,8 @@ func TestLifecycleAndStatus(t *testing.T) {
 func TestUpdate(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	v, _ := e.svc.Create(ctx, validInput("S"), e.actor)
-	_, _ = e.svc.Create(ctx, validInput("Other"), e.actor)
+	v, _ := e.create(ctx, validInput("S"), e.actor)
+	_, _ = e.create(ctx, validInput("Other"), e.actor)
 	name, mem := "Renamed", 4096
 
 	if _, err := e.svc.Start(ctx, v.ID, e.actor); err != nil {
@@ -468,7 +552,7 @@ func TestDelete(t *testing.T) {
 	ctx := context.Background()
 	for _, deleteFiles := range []bool{false, true} {
 		e := newEnv(t)
-		v, _ := e.svc.Create(ctx, validInput("S"), e.actor)
+		v, _ := e.create(ctx, validInput("S"), e.actor)
 		_, _ = e.svc.Start(ctx, v.ID, e.actor)
 		if err := e.svc.Delete(ctx, v.ID, deleteFiles, e.actor); err != nil {
 			t.Fatal(err)
@@ -493,7 +577,7 @@ func TestDelete(t *testing.T) {
 
 	// A container that disappeared, or that is no longer ours, is only forgotten.
 	e := newEnv(t)
-	v, _ := e.svc.Create(ctx, validInput("S"), e.actor)
+	v, _ := e.create(ctx, validInput("S"), e.actor)
 	e.rt.containers[v.ContainerID].ServerID = "OTHER"
 	if err := e.svc.Delete(ctx, v.ID, true, e.actor); err != nil {
 		t.Fatal(err)
@@ -504,7 +588,7 @@ func TestDelete(t *testing.T) {
 
 	// Docker down: nothing is deleted.
 	e = newEnv(t)
-	v, _ = e.svc.Create(ctx, validInput("S"), e.actor)
+	v, _ = e.create(ctx, validInput("S"), e.actor)
 	e.rt.fail["stop"] = domain.ErrDockerUnavailable
 	if err := e.svc.Delete(ctx, v.ID, true, e.actor); !errors.Is(err, domain.ErrDockerUnavailable) {
 		t.Fatalf("docker down: %v", err)
@@ -517,8 +601,8 @@ func TestDelete(t *testing.T) {
 func TestCounts(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	a, _ := e.svc.Create(ctx, validInput("A"), e.actor)
-	_, _ = e.svc.Create(ctx, validInput("B"), e.actor)
+	a, _ := e.create(ctx, validInput("A"), e.actor)
+	_, _ = e.create(ctx, validInput("B"), e.actor)
 	_, _ = e.svc.Start(ctx, a.ID, e.actor)
 	c, err := e.svc.Counts(ctx)
 	if err != nil || c != (domain.ServerCounts{Total: 2, Running: 1, Stopped: 1}) {
@@ -529,7 +613,7 @@ func TestCounts(t *testing.T) {
 func TestDeleteOrphanContainer(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
-	v, _ := e.svc.Create(ctx, validInput("S"), e.actor)
+	v, _ := e.create(ctx, validInput("S"), e.actor)
 
 	// Still registered: refused, container kept.
 	if err := e.svc.DeleteOrphanContainer(ctx, v.ContainerID, e.actor); !errors.Is(err, domain.ErrNotManaged) {
