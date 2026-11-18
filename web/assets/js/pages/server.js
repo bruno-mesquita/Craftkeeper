@@ -1,5 +1,6 @@
 // Server page: header with live status and lifecycle actions, then tabs: the live console
-// (WebSocket channel server:<id>, docs/WEBSOCKET.md), the file manager backups and players. Usage is
+// (WebSocket channel server:<id>, docs/WEBSOCKET.md), the file manager, backups, players and
+// the server.properties form. Usage is
 // polled over REST.
 import { api, ApiError } from '../api.js';
 import { h, toast } from '../dom.js';
@@ -7,6 +8,7 @@ import { bytes, percent } from '../format.js';
 import { mountBackupManager } from '../backup-manager.js';
 import { mountFileManager } from '../file-manager.js';
 import { mountPlayerManager } from '../player-manager.js';
+import { mountPropertiesManager } from '../properties-manager.js';
 import { ACTIONS, ACTIVE, STATUS, confirmAction, gameVersion, lifecycleActions, runAction } from '../server-actions.js';
 import * as ws from '../ws.js';
 
@@ -67,14 +69,17 @@ export function mount(root, { param: id }) {
   let backups = null; // backup manager, mounted on first use
   const playersPanel = h('section', { class: 'card', id: 'panel-players', role: 'tabpanel', 'aria-labelledby': 'tab-players', hidden: true });
   let players = null; // player manager, mounted on first use
+  const propertiesPanel = h('section', { class: 'card', id: 'panel-properties', role: 'tabpanel', 'aria-labelledby': 'tab-properties', hidden: true });
+  let properties = null; // server.properties form, mounted on first use
 
   const tabButtons = {
     console: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-console', 'aria-controls': 'panel-console' }, 'Console'),
     files: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-files', 'aria-controls': 'panel-files' }, 'Files'),
     backups: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-backups', 'aria-controls': 'panel-backups' }, 'Backups'),
     players: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-players', 'aria-controls': 'panel-players' }, 'Players'),
+    properties: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-properties', 'aria-controls': 'panel-properties' }, 'Properties'),
   };
-  const panels = { console: consolePanel, files: filesPanel, backups: backupsPanel, players: playersPanel };
+  const panels = { console: consolePanel, files: filesPanel, backups: backupsPanel, players: playersPanel, properties: propertiesPanel };
 
   function showTab(name) {
     for (const [n, b] of Object.entries(tabButtons)) {
@@ -94,6 +99,12 @@ export function mount(root, { param: id }) {
       players.setRunning(Boolean(server && ACTIVE.has(server.status)));
     } else if (name === 'players') {
       players.refresh();
+    }
+    if (name === 'properties' && !properties) {
+      properties = mountPropertiesManager(propertiesPanel, { id, onRestart: () => act('restart') });
+      properties.setRunning(Boolean(server && ACTIVE.has(server.status)));
+    } else if (name === 'properties') {
+      properties.refresh();
     }
     if (name === 'backups') {
       if (!backups) {
@@ -128,7 +139,8 @@ export function mount(root, { param: id }) {
     consolePanel,
     filesPanel,
     backupsPanel,
-    playersPanel);
+    playersPanel,
+    propertiesPanel);
   showTab('console');
 
   // --- header -------------------------------------------------------------------------
@@ -151,7 +163,9 @@ export function mount(root, { param: id }) {
     renderInput();
     files?.setRunning(ACTIVE.has(server.status));
     backups?.setRunning(ACTIVE.has(server.status));
-    players?.setRunning(ACTIVE.has(server.status));  }
+    players?.setRunning(ACTIVE.has(server.status));
+    properties?.setRunning(ACTIVE.has(server.status));
+  }
 
   async function act(action) {
     if (!(await confirmAction(server, action))) return;
@@ -180,6 +194,7 @@ export function mount(root, { param: id }) {
         filesPanel.hidden = true;
         backupsPanel.hidden = true;
         playersPanel.hidden = true;
+        propertiesPanel.hidden = true;
         return;
       }
       notice.hidden = false;

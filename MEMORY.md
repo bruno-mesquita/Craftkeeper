@@ -254,6 +254,24 @@ Plano: `~/.claude/plans/na-tela-de-detalhes-glittery-panda.md`.
 - **Testado:** pendente — rodar `sudo make check` (`players_test.go`, `domain/players_test.go`).
   Não verificado contra Minecraft real (comandos via console, formato dos JSONs).
 
+## Aba Properties — `server.properties` por formulário (2026-11-18)
+
+Plano: `~/.claude/plans/preciso-agora-que-tudo-cuddly-widget.md`.
+- **D49 · Form só no frontend, sobre a API de arquivos** — `GET/PUT /files/content` já dá
+  escrita atômica, `os.Root`, versão (409) e auditoria; um endpoint próprio não acrescentaria
+  segurança (o arquivo cru segue editável em Files). Sem mudança de API/backend.
+- **Implementado:** `web/assets/js/properties-manager.js` + aba "Properties" em `pages/server.js`.
+  Parser/serializer Java Properties (desescapa `\uXXXX`, `\:`…; grava não-ASCII como `\uXXXX`);
+  só reescreve linhas de chaves alteradas (comentários/ordem/CRLF preservados; arquivo intocado
+  sai idêntico). Schema com rótulo/descrição/tipo por grupo; chaves desconhecidas em "Other"
+  (texto); `server-port` e RCON somente leitura (container expõe 25565; `ENABLE_RCON=false`).
+  Chave ausente mostra o default e só é gravada se mudar. MOTD com botões de cor/estilo `§` e
+  preview. Busca, "Undo" por campo, barra de salvar; rodando → "Save and restart". 409 →
+  reaplica as edições sobre a versão nova após confirmação. Arquivo inexistente: relê antes de
+  gravar para não sobrescrever um arquivo que o jogo acabou de criar.
+- **Testado:** round-trip do parser/serializer com node (local, ad hoc); `sudo make check` passou.
+- **Verificado de verdade (usuário, 2026-11-18):** roteiro manual do plano no navegador ok.
+
 ## Modpacks — implementação inicial
 
 - ZIP é enviado no diálogo "New server" (a aba Modpack da tela do servidor foi removida em
