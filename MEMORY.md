@@ -3,7 +3,7 @@
 Registro vivo de fatos do host, decisões arquiteturais e estado do projeto.
 Atualizar sempre que algo aqui mudar. Spec completa: [`docs/SPEC.md`](docs/SPEC.md).
 
-Última atualização: **2026-11-18**
+Última atualização: **2026-11-19**
 
 ---
 
@@ -91,6 +91,10 @@ Formato: decisão — motivo — consequência.
 - **D61 · Backup automático antes de toda operação destrutiva** (escolha do usuário: sempre) — `backups.Protect(ctx, id, actor, change)`: backup **síncrono** (kind `manual`, nunca podado; sem migration no CHECK de `kind`) reaproveitando `complete` (núcleo extraído do `run`), servidor segurado (`opProtect`) até o fim da mudança — sem backup/restore intercalado. Falha → `500 backup_failed`, nada muda. Request cancelada → backup fica, mudança não roda. `wg` cobre só o backup (Close não espera a mudança). Start não é bloqueado: a mudança reconfere `stopped` (padrão D40).
 - **D62 · `application/maintenance`** — versão, reset e import de mundo: valida o que é barato (input, `level-name`, zip) → `Protect` → reconfere parado → aplica. Mundo = `level-name` do `server.properties` (default `world`, `domain.LevelName` via `CleanServerPath`). Reset apaga a pasta e, com `seed`, grava `level-seed` (com versão, D35). Import: zip já enviado pelo upload existente, extraído (limites D33) em `.mesquita-tmp-world-*` (ignorado pelo backup; `CleanupStale` agora limpa `.mesquita-tmp-*` no topo de cada pasta de servidor), `level.dat` na raiz ou numa única pasta de topo (`__MACOSX` ignorado), senão `422 invalid_world` sem backup; zip apagado depois de extraído. Export = download da pasta pela API de arquivos (só frontend). Layout Bukkit fora do escopo. Requests síncronas, deadline 45 min.
 - **D63 · Operadores pelo padrão da whitelist** — `op`/`deop` pelo console rodando; parado edita `ops.json` (`level` = `op-permission-level`, default 4; `bypassesPlayerLimit=false`). Audit `player.op`/`player.deop`.
+- **D64 · Mods sem estado no banco: identificados pelo hash** (Fase 12, 2026-11-19) — `mods/*.jar` e `*.jar.disabled` são o estado; SHA-512 em cache de memória (servidor + nome, invalidado por tamanho/mtime, podado a cada listagem); Modrinth identifica (`POST /v2/version_files`) e acha updates (`/version_files/update` com loader + MC do servidor; só oferece se publicado depois). Jar desconhecido = "manual". Sem migration; uploads manuais e restores ficam coerentes.
+- **D65 · Cliente Modrinth fixo + download verificado** — `infrastructure/modrinth` (`URLs`/`Official`, User-Agent `mesquita-panel`, JSON ≤ 8 MiB, timeout 15 s; download sem timeout total, só o ctx da requisição + timeouts de handshake/cabeçalho). Só baixa de `https://cdn.modrinth.com/` (redirect para fora recusado), ≤ 256 MiB, reader confere tamanho + SHA-512 e falha **antes** do EOF → `ServerFiles.Save` (D32) descarta o temporário. Reserva de 2 GiB (`ServerFiles.FreeBytes`). Nome gravado sanitizado (`domain.SafeModFileName`). Fonte fora/hash errado → `503 modrinth_unavailable`; listagem degrada (`catalog_unavailable`).
+- **D66 · Escopo e regras dos mods** (escolhas do usuário, 2026-11-18) — só modded sem modpack (`409 mods_unsupported`/`modpack_server`; `domain.ModpackConfigFile` consolidado). Mudanças permitidas com o servidor rodando (UI mostra "Restart"). Versão = release mais nova compatível (senão a mais nova). Deps `required` em largura, puladas se o projeto já está instalado (ativo ou não), ≤ 32 arquivos por operação; `incompatible` em qualquer sentido → `409 mod_incompatible`. Install tudo-ou-nada (remove o que escreveu). Update: `backups.Protect` opcional (campo `backup`, padrão `false` na API; checkbox marcado por padrão na UI — pedido do usuário, 2026-11-19; install/remove nunca fazem backup) → baixa → remove o antigo; desativado continua desativado. Ativar/desativar = renomear `.jar` ↔ `.jar.disabled`. Uma operação de mods por servidor (`409 server_busy`). Busca: `project_type:mod`, `categories:<loader>`, `versions:<mc>`, `server_side` required/optional.
+- **D67 · Ícones de mods por proxy** — `GET /api/v1/mods/icons/{project_id}`: o backend resolve o `icon_url` (cache 1 h, ≤ 1024 entradas), só host do CDN, ≤ 256 KiB, PNG/JPEG/GIF/WebP por sniff (SVG recusado), `Cache-Control: private, max-age=86400`. Cliente nunca passa URL; CSP inalterada.
 - **D10 · systemd com usuário dedicado `mesquita-panel`** — princípio do menor privilégio. — Precisa estar no grupo `docker` (root-equivalente) a partir da Fase 3; criação do usuário e grupo exige autorização no deploy.
 
 ---
@@ -124,7 +128,8 @@ Formato: decisão — motivo — consequência.
 | 9 | Console e eventos (histórico, busca, logs antigos, Activity) | ✅ implementada, testada e verificada (2026-11-18) | ver Fase 9 abaixo |
 | 10 | Tarefas agendadas + webhook Discord | ⏸️ opcional (pulada a pedido do usuário, 2026-11-18) | ver "Roadmap pós-Fase 7" abaixo |
 | 11 | Trocar versão/loader, mundos, operadores | ✅ implementada, testada e verificada (2026-11-18) | ver Fase 11 abaixo |
-| 12–14 | Roadmap pós-Fase 7 (features) | 📋 planejadas (2026-11-18) | ver "Roadmap pós-Fase 7" abaixo |
+| 12 | Mods via Modrinth | 🚧 implementada e testada (`make check` ok); falta verificação real (2026-11-19) | ver Fase 12 abaixo |
+| 13–14 | Roadmap pós-Fase 7 (features) | 📋 planejadas (2026-11-18) | ver "Roadmap pós-Fase 7" abaixo |
 
 Legenda de detalhe por feature (preencher ao implementar): **implementado** / **testado** / **planejado**.
 
@@ -344,7 +349,7 @@ subiram um número.
 | 9 | Console e eventos: histórico de comandos, busca, `logs/*.log.gz`; página Activity + aba por servidor | ✅ concluída | — |
 | 10 | Tarefas agendadas (restart/comando/anúncio; generaliza D42) + webhook Discord (crash, start/stop, backup falho, join/leave via SLP) | ⏸️ opcional (pulada a pedido do usuário, 2026-11-18) | — |
 | 11 | Trocar versão/loader com backup automático; mundos (reset, seed, import/export) + `ops.json` | ✅ concluída | — |
-| 12 | Mods via Modrinth (busca por loader/MC, SHA-512, updates, dependências) | planejada | — |
+| 12 | Mods via Modrinth (busca por loader/MC, SHA-512, updates, dependências) | 🚧 implementada | — |
 | 13 | Histórico de métricas (revisa D18; 1 min, 24–48 h, SVG) + página global Backups | planejada | — |
 | 14 | Clonar servidor / templates + status público (ponto de exposição a decidir) | planejada | possivelmente exposição pública |
 
@@ -453,3 +458,28 @@ opcional (pulada a pedido do usuário).
   `sqlite` (Update com versão), `http/maintenance_test.go` (contratos). JS: `node --check`.
 - **Testado:** `sudo make check` passou (2026-11-18). O 1º run pegou só um bug de teste (`AuditFilter` sem `Limit` devolve vazio).
 - **Verificado de verdade (usuário, 2026-11-18):** funcionou no painel (aba World e Operators).
+
+## Fase 12 — Mods via Modrinth (2026-11-19)
+
+Plano: `~/.claude/plans/mellow-humming-hennessy.md`. Decisões D64–D67.
+- **Implementado:** `domain/mods.go` (tipos, `ValidateModrinthID`, `ValidateModFile`,
+  `SafeModFileName`, `ModpackConfigFile`, limites), erros `mods_unsupported`/`mod_incompatible`/
+  `modrinth_unavailable`, audit `mod.install|update|remove|enable|disable`;
+  `infrastructure/modrinth` (busca, projetos, versões, by-hash, download verificado, ícone);
+  `ServerFiles.FreeBytes`; `application/mods` (List, Search, Versions, Install, Update,
+  SetEnabled, Remove, Icon); rotas em `presentation/http/mods.go` (`/servers/{id}/mods`,
+  `/mods/search`, `/mods/projects/{project}/versions`, `/mods/update`, `/mods/files/{file}`,
+  `/mods/icons/{project}`); `main.go`. Frontend: `mod-manager.js` (instalados com ícone, versão,
+  Update/Update all com backup, Enable/Disable, Remove; busca paginada; diálogo de instalação
+  com seletor de versão e aviso de deps; aviso "Restart" com servidor rodando), aba **Mods** em
+  `pages/server.js` (escondida em vanilla; modpack explicado dentro), rótulos no Activity.
+  Docs: `API.md` (seção Mods + erros), `SECURITY.md`, `ARCHITECTURE.md`.
+- **Testes escritos:** `domain/mods_test.go`, `modrinth/client_test.go` (hash/tamanho/host/
+  redirect, validação de versões, 404/500, SVG), `mods/service_test.go` (deps + pulo de
+  instalados, release preferida, incompatível nos dois sentidos, limite de 32, download ruim não
+  deixa arquivo, update com backup/desativado/deps, escopo), contrato `http/mods_test.go`
+  (Modrinth falso em httptest). JS: `node --check`.
+- `make css` regenerado.
+- **Testado:** `sudo make check` passou (2026-11-19, inclusive após backup opcional no update; binário 14,1 MB). Diálogo de instalação conferido no navegador pelo usuário.
+- **Pendente:** roteiro manual com servidor Fabric real (ver plano).
+

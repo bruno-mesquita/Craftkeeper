@@ -256,7 +256,7 @@ func (s *Service) ModpackInfo(ctx context.Context, id string) (Modpack, error) {
 	} else if err != nil && !errors.Is(err, domain.ErrNotFound) {
 		return Modpack{}, err
 	}
-	f, _, err := s.files.OpenFile(id, ".mesquita-modpack")
+	f, _, err := s.files.OpenFile(id, domain.ModpackConfigFile)
 	if err == nil && f != nil {
 		defer f.Close()
 		b, readErr := io.ReadAll(io.LimitReader(f, 4096))
@@ -313,7 +313,7 @@ func (s *Service) ConfigureModpack(ctx context.Context, id, install, start strin
 	if !slices.Contains(modpack.Scripts, cleanInstall) || !slices.Contains(modpack.Scripts, cleanStart) {
 		return &domain.ValidationError{Field: "scripts", Message: "select scripts found in the server files"}
 	}
-	_, err = s.files.WriteText(id, ".mesquita-modpack", cleanInstall+"\n"+cleanStart+"\n", "")
+	_, err = s.files.WriteText(id, domain.ModpackConfigFile, cleanInstall+"\n"+cleanStart+"\n", "")
 	if err == nil && modpack.Installed && modpack.InstallScript != cleanInstall {
 		if removeErr := s.files.Remove(id, ".mesquita-modpack-installed"); removeErr != nil && !errors.Is(removeErr, domain.ErrNotFound) {
 			err = removeErr

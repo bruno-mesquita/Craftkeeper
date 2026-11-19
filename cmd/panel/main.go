@@ -24,6 +24,7 @@ import (
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/files"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/installers"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/maintenance"
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/mods"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/monitoring"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/players"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
@@ -34,6 +35,7 @@ import (
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/hostnet"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/metrics"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/minecraft"
+	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/modrinth"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/mojang"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/password"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/sqlite"
@@ -162,9 +164,10 @@ func run() error {
 	}()
 
 	maintenanceSvc := maintenance.NewService(serversSvc, backupsSvc, serverFiles, auditLog)
+	modsSvc := mods.NewService(modrinth.New(modrinth.Official), serverFiles, serversSvc, backupsSvc, auditLog)
 
 	handler := httpapi.New(authSvc, monitoringSvc, dashboardSvc, activity.NewService(auditLog), serversSvc, installersSvc,
-		filesSvc, backupsSvc, playersSvc, maintenanceSvc, hub, web.FS, cfg.SecureCookie, log).Handler()
+		filesSvc, backupsSvc, playersSvc, maintenanceSvc, modsSvc, hub, web.FS, cfg.SecureCookie, log).Handler()
 	return serve(ctx, log, cfg.Listen, handler, hub)
 }
 

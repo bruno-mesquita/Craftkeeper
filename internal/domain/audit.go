@@ -59,6 +59,13 @@ const (
 	AuditIPPardon        = "ip.pardon"
 	AuditPlayerOp        = "player.op"
 	AuditPlayerDeop      = "player.deop"
+
+	// Mod actions target "<server name>: <file>" ("<old file> → <new file>" for an update).
+	AuditModInstall = "mod.install"
+	AuditModUpdate  = "mod.update"
+	AuditModRemove  = "mod.remove"
+	AuditModEnable  = "mod.enable"
+	AuditModDisable = "mod.disable"
 )
 
 // AuditActions lists every action, in display order. Filters only accept these.
@@ -72,6 +79,7 @@ var AuditActions = []string{
 	AuditBackupCreate, AuditBackupRestore, AuditBackupDelete, AuditBackupSchedule,
 	AuditWhitelistToggle, AuditWhitelistAdd, AuditWhitelistRemove,
 	AuditPlayerBan, AuditPlayerPardon, AuditIPBan, AuditIPPardon, AuditPlayerOp, AuditPlayerDeop,
+	AuditModInstall, AuditModUpdate, AuditModRemove, AuditModEnable, AuditModDisable,
 }
 
 type AuditEvent struct {

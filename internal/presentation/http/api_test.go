@@ -27,12 +27,14 @@ import (
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/files"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/installers"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/maintenance"
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/mods"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/monitoring"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/players"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
 	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/docker"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/filesystem"
+	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/modrinth"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/password"
 	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/sqlite"
 	httpapi "github.com/bruno-mesquita/mesquita-panel/internal/presentation/http"
@@ -72,6 +74,7 @@ type client struct {
 	src     *stubSource
 	console *recordConsole
 	pinger  *fakePinger
+	mr      *fakeModrinth
 
 	serversDir string
 }
@@ -111,6 +114,7 @@ func newServerWith(t *testing.T, containers monitoring.ContainerCollector) *clie
 	backupsSvc := backups.NewService(sqlite.NewBackups(store), filesystem.NewBackups(backupsDir, serverFiles),
 		serversSvc, stubConsole{}, audit, log)
 	t.Cleanup(backupsSvc.Close)
+	mr := newFakeModrinth(t)
 	api := httpapi.New(authSvc,
 		monitoring.NewService(stubCollector{}, containers, time.Second),
 		dashboard.NewService(docker.NewClient(filepath.Join(t.TempDir(), "no-docker.sock")), serversSvc, audit),
@@ -118,12 +122,13 @@ func newServerWith(t *testing.T, containers monitoring.ContainerCollector) *clie
 		serversSvc, installersSvc, files.NewService(serverFiles, serversSvc, audit), backupsSvc,
 		players.NewService(serverFiles, serversSvc, pc, fakeAccounts{}, pinger, audit),
 		maintenance.NewService(serversSvc, backupsSvc, serverFiles, audit),
+		mods.NewService(modrinth.New(mr.urls), serverFiles, serversSvc, backupsSvc, audit),
 		wspres.NewHub(authSvc, nil, log), static, false, log)
 
 	srv := httptest.NewServer(api.Handler())
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
-	return &client{t: t, base: srv.URL, http: &http.Client{Jar: jar}, rt: rt, src: src, console: pc, pinger: pinger, serversDir: serversDir}
+	return &client{t: t, base: srv.URL, http: &http.Client{Jar: jar}, rt: rt, src: src, console: pc, pinger: pinger, mr: mr, serversDir: serversDir}
 }
 
 // do sends a same-origin request the way a browser would (Sec-Fetch-Site: same-origin).

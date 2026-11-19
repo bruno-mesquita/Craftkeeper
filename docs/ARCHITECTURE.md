@@ -43,6 +43,7 @@ runtime, repositories, version sources and the WebSocket adapter.
 | Console and live status | `console` | `docker` (logs, attach, events) | `websocket` |
 | File manager | `files` | `filesystem` (`os.Root`, zip) | `http` |
 | Backups | `backups` | `filesystem` (zip, staging), `sqlite` | `http` |
+| Mods (Modrinth) | `mods` | `modrinth` (API + CDN over HTTPS, SHA-512 check), `filesystem` | `http` |
 | Shared short cache | `ttlcache` | — | — |
 
 ### Docker

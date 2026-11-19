@@ -40,17 +40,20 @@ unless marked *planned*.
 | 409 | `container_missing` | The server's container no longer exists; only deletion works |
 | 409 | `container_not_managed` | The container no longer carries this server's labels; the panel refuses to touch it |
 | 409 | `port_in_use` | The game port is taken on the host when starting |
-| 409 | `modpack_server` | The server runs a modpack, whose scripts choose the game version |
+| 409 | `modpack_server` | The server runs a modpack, whose scripts choose the game version and own its mods |
+| 409 | `mods_unsupported` | The server is vanilla: it has no mod loader |
+| 409 | `mod_incompatible` | A mod to install is declared incompatible with an installed or planned one |
 | 413 | `payload_too_large` | Body over 64 KiB |
 | 422 | `validation_failed` | Field-level validation error |
 | 422 | `invalid_world` | The archive holds no Minecraft world (`level.dat`) |
 | 429 | `rate_limited` | Too many failed logins; retry after the window |
 | 500 | `internal_error` | Unexpected server error (details only in logs) |
-| 500 | `backup_failed` | The automatic backup before a version change or world reset/import failed; nothing was changed |
+| 500 | `backup_failed` | The automatic backup before a version change, world reset/import or a mod update that asked for one failed; nothing was changed |
 | 502 | `docker_error` | Docker rejected the operation (details only in logs) |
 | 503 | `docker_unavailable` | The Docker daemon cannot be reached |
 | 503 | `installer_unavailable` | An official version source (Mojang, Fabric, Forge, NeoForge) cannot be reached |
 | 503 | `account_lookup_unavailable` | Mojang cannot be reached to look up a player account or skin |
+| 503 | `modrinth_unavailable` | Modrinth cannot be reached, or a downloaded mod failed its size or SHA-512 check |
 
 ## Objects
 
@@ -597,6 +600,89 @@ is backed up and the world directory replaced. `204` · `422 invalid_world` (the
 the current world are kept) · `422 invalid_archive` · `413 archive_too_large` · `422
 validation_failed` (field `path`). Worlds in the Bukkit layout (separate `world_nether`,
 `world_the_end`) are not supported. Audit `world.import`.
+
+## Mods
+
+Mods of modded servers (Fabric, Forge, NeoForge) from [Modrinth](https://modrinth.com). The
+jars in the server's `mods/` folder are the only state: nothing is stored in the database.
+Modrinth identifies each file by its SHA-512, so a jar uploaded by hand appears too (with
+`project`/`version` null when Modrinth does not know it). A disabled mod is renamed to
+`<file>.disabled`, which the loaders skip. Mods may change while the server runs; the game
+reads them on its next start. One mod operation per server at a time (`409 server_busy`).
+
+Every endpoint answers `409 mods_unsupported` (vanilla), `409 modpack_server` (a configured
+modpack owns the mods) and `409 server_busy` (being created). Downloads come only from
+`https://cdn.modrinth.com/`, are at most 256 MiB each, are checked against the size and
+SHA-512 Modrinth publishes while they stream (`503 modrinth_unavailable` on a mismatch, and no
+file is kept), and must leave 2 GiB free on the disk (`507 insufficient_storage`). The panel
+writes a downloaded file under a sanitized name (`[A-Za-z0-9._+-]`, ending in `.jar`).
+
+Objects:
+
+- **project** `{"id", "slug", "title", "description", "has_icon", "server_side", "downloads"}`
+  (`server_side`: `required`, `optional`, `unsupported` or `unknown`).
+- **version** `{"id", "project_id", "name", "number", "type", "published_at", "file_name",
+  "size", "loaders": [], "game_versions": [], "dependencies": [{"project_id", "version_id",
+  "kind"}]}` (`type`: `release`, `beta`, `alpha`; `kind`: `required`, `optional`,
+  `incompatible`, `embedded`; either ID of a dependency may be `""`).
+- **mod** `{"file", "enabled", "size", "modified_at", "project", "version", "update"}`:
+  `project`/`version` null when Modrinth does not know the file; `update` is the newest
+  version for the server's loader and Minecraft version when it is newer than the installed
+  one, else null.
+
+### `GET /servers/{id}/mods` — auth
+`{"mods": [mod], "catalog_unavailable": false}` sorted by file name. When Modrinth cannot be
+reached the files are still listed, with null `project`/`version`/`update` and
+`catalog_unavailable: true`.
+
+### `GET /servers/{id}/mods/search?q=&offset=` — auth
+Mods for the server's loader and Minecraft version that run on servers (`server_side`
+required or optional): by relevance, or by downloads when `q` is empty. Pages of 20.
+`{"hits": [project], "offset", "total"}` · `422 validation_failed` (`q` over 100
+characters, `offset` outside 0–10000) · `503 modrinth_unavailable`.
+
+### `GET /servers/{id}/mods/projects/{project_id}/versions` — auth
+The project's versions for the server's loader and Minecraft version, newest first.
+`{"versions": [version]}` · `422 validation_failed` (field `project_id`: not an 8-character
+Modrinth ID, or unknown project).
+
+### `POST /servers/{id}/mods` — auth + CSRF
+Body `{"project_id", "version_id"}` (`version_id` optional: the newest release, else the
+newest version, for the server). Installs the mod and, breadth first, the `required`
+dependencies whose project is not installed yet (enabled or disabled), each at its newest
+compatible version; at most 32 files per request. Refused with `409 mod_incompatible` when a
+mod involved declares an installed or planned one `incompatible` (or the reverse). All or
+nothing: a failed download removes the files the request wrote. `200 {"installed":
+["<file>", …], "updated": []}` (the mod first) · `422 validation_failed` (project already
+installed; version of another project or not for this server; a dependency without a
+compatible version; more than 32 files) · `409 file_exists` · `503 modrinth_unavailable`.
+Audit `mod.install` per file (target `<server name>: <file>`).
+
+### `POST /servers/{id}/mods/update` — auth + CSRF
+Body `{"files": ["<file>", …], "backup": true|false}`; `files` empty or omitted updates every
+mod that has an `update`. With `backup: true` (default `false`) a full backup of the server is
+made first (as in [World](#world), but the server may be running: the backup is online). Then
+it downloads each new version (a disabled mod stays
+disabled) and new `required` dependencies, and removes the old files. Nothing to update:
+`200` without a backup. `200 {"installed": ["<new dependency>", …], "updated": [{"from",
+"to"}]}` · `422 validation_failed` (field `files`: not installed, or no update) · `409
+mod_incompatible` · `500 backup_failed` · `503 modrinth_unavailable`. Audit `mod.update`
+(target `<server name>: <old file> → <new file>`), `mod.install` for new dependencies.
+
+### `PATCH /servers/{id}/mods/files/{file}` — auth + CSRF
+Body `{"enabled": true|false}`. Renames `<name>.jar` ↔ `<name>.jar.disabled`.
+`200 {"file": "<new name>", "enabled"}` · `404 not_found` · `409 file_exists` · `422
+validation_failed` (field `file`: not a `.jar` or `.jar.disabled` name; field `enabled`
+missing). Audit `mod.enable` / `mod.disable` (target `<server name>: <file before>`).
+
+### `DELETE /servers/{id}/mods/files/{file}` — auth + CSRF
+Deletes the mod file. `204` · `404 not_found` · `422 validation_failed`. Audit `mod.remove`.
+
+### `GET /mods/icons/{project_id}` — auth
+The project's icon, fetched from `cdn.modrinth.com` (the client never passes a URL). Only
+PNG, JPEG, GIF and WebP up to 256 KiB. `200` with the sniffed type and `Cache-Control:
+private, max-age=86400` · `404 not_found` (no icon, or not a raster image) · `422
+validation_failed` · `503 modrinth_unavailable`.
 
 ## WebSocket
 

@@ -13,6 +13,7 @@ import (
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/files"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/installers"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/maintenance"
+	"github.com/bruno-mesquita/mesquita-panel/internal/application/mods"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/monitoring"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/players"
 	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
@@ -31,6 +32,7 @@ type API struct {
 	backups     *backups.Service
 	players     *players.Service
 	maintenance *maintenance.Service
+	mods        *mods.Service
 	ws          *wspres.Hub
 	static      fs.FS
 	// secureCookie marks the session cookie Secure even on plain HTTP requests: the panel
@@ -40,10 +42,10 @@ type API struct {
 }
 
 func New(a *auth.Service, m *monitoring.Service, d *dashboard.Service, act *activity.Service, s *servers.Service,
-	i *installers.Service, f *files.Service, b *backups.Service, p *players.Service, mt *maintenance.Service, ws *wspres.Hub,
+	i *installers.Service, f *files.Service, b *backups.Service, p *players.Service, mt *maintenance.Service, md *mods.Service, ws *wspres.Hub,
 	static fs.FS, secureCookie bool, log *slog.Logger) *API {
 	return &API{auth: a, monitoring: m, dashboard: d, activity: act, servers: s, installers: i, files: f, backups: b, players: p,
-		maintenance: mt, ws: ws,
+		maintenance: mt, mods: md, ws: ws,
 		static: static, secureCookie: secureCookie, log: log}
 }
 
@@ -107,6 +109,8 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/servers/{id}/version", fileRoute(a.changeVersion))
 	mux.HandleFunc("POST /api/v1/servers/{id}/world/reset", fileRoute(a.resetWorld))
 	mux.HandleFunc("POST /api/v1/servers/{id}/world/import", fileRoute(a.importWorld))
+
+	a.modRoutes(mux, fileRoute)
 
 	mux.HandleFunc("GET /api/v1/ws", a.requireAuth(a.websocket))
 

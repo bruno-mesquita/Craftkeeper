@@ -18,6 +18,10 @@ const GROUPS = [
     'file.upload': 'Upload', 'file.write': 'File edited', 'file.mkdir': 'Folder created', 'file.rename': 'Rename',
     'file.delete': 'Delete', 'file.extract': 'Extract', 'modpack.configure': 'Modpack configured', 'modpack.install': 'Modpack install',
   }],
+  ['Mods', {
+    'mod.install': 'Mod installed', 'mod.update': 'Mod updated', 'mod.remove': 'Mod removed',
+    'mod.enable': 'Mod enabled', 'mod.disable': 'Mod disabled',
+  }],
   ['Backups', { 'backup.create': 'Backup', 'backup.restore': 'Restore', 'backup.delete': 'Backup deleted', 'backup.schedule_update': 'Backup schedule' }],
   ['Players', {
     'whitelist.toggle': 'Whitelist on/off', 'whitelist.add': 'Whitelist add', 'whitelist.remove': 'Whitelist remove',

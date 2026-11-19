@@ -20,12 +20,12 @@ export function openDialog({ title, content, onClose }) {
   return { dialog, close: () => dialog.close() };
 }
 
-// confirmDialog asks for confirmation. With `checkbox` (a label), the answer also says
-// whether it was ticked. Resolves to null when cancelled, else { checked }.
-export function confirmDialog({ title, message, confirmLabel = 'Confirm', danger = false, checkbox }) {
+// confirmDialog asks for confirmation. With `checkbox` (a label, ticked when `checked`), the
+// answer also says whether it was ticked. Resolves to null when cancelled, else { checked }.
+export function confirmDialog({ title, message, confirmLabel = 'Confirm', danger = false, checkbox, checked = false }) {
   return new Promise((resolve) => {
     let result = null;
-    const box = checkbox ? h('input', { type: 'checkbox', class: 'size-4 accent-danger' }) : null;
+    const box = checkbox ? h('input', { type: 'checkbox', class: 'size-4 accent-danger', checked }) : null;
     const cancel = h('button', { class: 'btn btn-ghost', type: 'button' }, 'Cancel');
     const ok = h('button', { class: `btn ${danger ? 'btn-danger' : 'btn-primary'}`, type: 'button' }, confirmLabel);
     const { close } = openDialog({

@@ -96,6 +96,13 @@ func writeDomainError(w http.ResponseWriter, log *slog.Logger, err error) {
 		writeError(w, http.StatusConflict, "server_busy", "the server is being created, started or restarted; try again shortly")
 	case errors.Is(err, domain.ErrModpackServer):
 		writeError(w, http.StatusConflict, "modpack_server", "the server runs a modpack, whose scripts choose the game version")
+	case errors.Is(err, domain.ErrModsUnsupported):
+		writeError(w, http.StatusConflict, "mods_unsupported", "the server has no mod loader")
+	case errors.Is(err, domain.ErrModIncompatible):
+		writeError(w, http.StatusConflict, "mod_incompatible", err.Error())
+	case errors.Is(err, domain.ErrModrinthUnavailable):
+		log.Warn("modrinth unavailable", "err", err)
+		writeError(w, http.StatusServiceUnavailable, "modrinth_unavailable", "Modrinth could not be reached or sent an invalid file; try again later")
 	case errors.Is(err, domain.ErrInvalidWorld):
 		writeError(w, http.StatusUnprocessableEntity, "invalid_world", "the archive does not contain a Minecraft world (level.dat)")
 	case errors.Is(err, domain.ErrBackupFailed):

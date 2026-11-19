@@ -74,6 +74,16 @@ NeoForge) with the host's CA store, a 15 s timeout and an 8 MiB limit. Every val
 against strict patterns before it reaches a container environment, and modded servers pin
 exact versions so nothing changes on restart (D43, D44).
 
+## Mods (Modrinth)
+
+The mods service talks to `api.modrinth.com` and downloads only from `cdn.modrinth.com`
+(redirects elsewhere are refused). Modrinth IDs, file names, hashes and sizes are validated
+before use; each jar is at most 256 MiB, verified against its published SHA-512 and size while
+it streams into a temporary file that is renamed into `mods/` only after the check (D32), and
+2 GiB of disk stay free. Icons are proxied by the panel (raster formats only, no SVG, at most
+256 KiB) so the CSP keeps `img-src 'self' data:`. Mods are third-party code that runs in the
+game container with its restrictions (D21); the panel cannot vouch for them (D64–D67).
+
 ## Service hardening
 
 The systemd unit runs as a dedicated `mesquita-panel` user with `NoNewPrivileges`,

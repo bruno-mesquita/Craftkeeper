@@ -432,6 +432,20 @@ func (s *ServerFiles) mkdirAll(r *os.Root, p string) error {
 	return nil
 }
 
+// FreeBytes returns the bytes available to the panel on the filesystem of a server's directory.
+func (s *ServerFiles) FreeBytes(id string) (int64, error) {
+	r, err := s.open(id) // validates id
+	if err != nil {
+		return 0, err
+	}
+	r.Close()
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(filepath.Join(s.root, id), &st); err != nil {
+		return 0, fmt.Errorf("filesystem: statfs: %w", err)
+	}
+	return int64(st.Bavail) * st.Bsize, nil
+}
+
 // Rename moves from to to (both non-root). An existing target is never replaced.
 func (s *ServerFiles) Rename(id, from, to string) error {
 	r, err := s.open(id)

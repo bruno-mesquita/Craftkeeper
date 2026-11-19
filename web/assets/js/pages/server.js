@@ -1,7 +1,7 @@
 // Server page: header with live status and lifecycle actions, then tabs: the live console
 // (WebSocket channel server:<id>, docs/WEBSOCKET.md) with old log files and search, the file
 // manager, backups, players, the server list icon with the server.properties form, the memory/CPU
-// limits, the game version and world tools, and the server's activity. Usage is polled over REST.
+// limits, the game version and world tools, Modrinth mods, and the server's activity. Usage is polled over REST.
 import { api, ApiError } from '../api.js';
 import { openDialog } from '../dialog.js';
 import { h, toast } from '../dom.js';
@@ -10,6 +10,7 @@ import { mountActivity } from '../activity.js';
 import { mountBackupManager } from '../backup-manager.js';
 import { mountFileManager } from '../file-manager.js';
 import { mountIconManager, serverIcon } from '../icon-manager.js';
+import { mountModManager } from '../mod-manager.js';
 import { filterLines, listLogs, matchesLine, readLog } from '../log-viewer.js';
 import { mountPlayerManager } from '../player-manager.js';
 import { mountPropertiesManager } from '../properties-manager.js';
@@ -102,6 +103,8 @@ export function mount(root, { param: id }) {
   let resources = null; // memory/CPU limits form, mounted on first use
   const worldPanel = h('section', { class: 'card', id: 'panel-world', role: 'tabpanel', 'aria-labelledby': 'tab-world', hidden: true });
   let world = null; // game version and world tools, mounted on first use
+  const modsPanel = h('section', { class: 'card', id: 'panel-mods', role: 'tabpanel', 'aria-labelledby': 'tab-mods', hidden: true });
+  let mods = null; // Modrinth mods, mounted on first use
   const activityPanel = h('section', { class: 'card', id: 'panel-activity', role: 'tabpanel', 'aria-labelledby': 'tab-activity', hidden: true });
   let activity = null; // this server's audit events, mounted on first use
 
@@ -113,9 +116,10 @@ export function mount(root, { param: id }) {
     properties: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-properties', 'aria-controls': 'panel-properties' }, 'Properties'),
     resources: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-resources', 'aria-controls': 'panel-resources' }, 'Resources'),
     world: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-world', 'aria-controls': 'panel-world' }, 'World'),
+    mods: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-mods', 'aria-controls': 'panel-mods', hidden: true }, 'Mods'),
     activity: h('button', { class: 'nav-link', type: 'button', role: 'tab', id: 'tab-activity', 'aria-controls': 'panel-activity' }, 'Activity'),
   };
-  const panels = { console: consolePanel, files: filesPanel, backups: backupsPanel, players: playersPanel, properties: propertiesPanel, resources: resourcesPanel, world: worldPanel, activity: activityPanel };
+  const panels = { console: consolePanel, files: filesPanel, backups: backupsPanel, players: playersPanel, properties: propertiesPanel, resources: resourcesPanel, world: worldPanel, mods: modsPanel, activity: activityPanel };
 
   function showTab(name) {
     for (const [n, b] of Object.entries(tabButtons)) {
@@ -162,6 +166,12 @@ export function mount(root, { param: id }) {
     } else if (name === 'world') {
       world.refresh();
     }
+    if (name === 'mods' && !mods) {
+      mods = mountModManager(modsPanel, { id, onRestart: () => act('restart') });
+      if (server) mods.setStatus(server.status);
+    } else if (name === 'mods') {
+      mods.refresh();
+    }
     if (name === 'activity') {
       if (!activity) activity = mountActivity(activityPanel, { serverId: id });
       else activity.refresh();
@@ -180,7 +190,7 @@ export function mount(root, { param: id }) {
   const tablist = h('div', { class: 'mb-3 flex flex-wrap gap-1', role: 'tablist', 'aria-label': 'Server sections' }, ...Object.values(tabButtons));
   tablist.addEventListener('keydown', (e) => {
     if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-    const names = Object.keys(tabButtons);
+    const names = Object.keys(tabButtons).filter((n) => !tabButtons[n].hidden);
     const i = names.indexOf(Object.keys(panels).find((n) => !panels[n].hidden));
     const next = names[(i + (e.key === 'ArrowRight' ? 1 : names.length - 1)) % names.length];
     showTab(next);
@@ -206,6 +216,7 @@ export function mount(root, { param: id }) {
     propertiesPanel,
     resourcesPanel,
     worldPanel,
+    modsPanel,
     activityPanel);
   showTab('console');
 
@@ -238,6 +249,10 @@ export function mount(root, { param: id }) {
     icon?.setRunning(ACTIVE.has(server.status));
     resources?.setServer(server);
     world?.setServer(server);
+    // Vanilla has no mod loader (a modpack server is explained inside the tab).
+    tabButtons.mods.hidden = server.loader === 'vanilla';
+    if (tabButtons.mods.hidden && !modsPanel.hidden) showTab('console');
+    mods?.setStatus(server.status);
   }
 
   async function act(action) {
@@ -269,6 +284,8 @@ export function mount(root, { param: id }) {
         playersPanel.hidden = true;
         propertiesPanel.hidden = true;
         resourcesPanel.hidden = true;
+        worldPanel.hidden = true;
+        modsPanel.hidden = true;
         activityPanel.hidden = true;
         return;
       }

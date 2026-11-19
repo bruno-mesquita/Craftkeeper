@@ -15,10 +15,6 @@ import (
 	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
 )
 
-// modpackConfig is the file a configured modpack keeps in the server directory: such a server
-// runs the pack's own scripts, which pick the game version.
-const modpackConfig = ".mesquita-modpack"
-
 // Servers resolves servers and replaces their container (servers.Service).
 type Servers interface {
 	Get(ctx context.Context, id string) (servers.View, error)
@@ -65,7 +61,7 @@ func (s *Service) ChangeVersion(ctx context.Context, id string, in servers.Versi
 	if _, err := s.stopped(ctx, id); err != nil {
 		return servers.View{}, err
 	}
-	if _, err := s.files.Stat(id, modpackConfig); err == nil {
+	if _, err := s.files.Stat(id, domain.ModpackConfigFile); err == nil {
 		return servers.View{}, domain.ErrModpackServer
 	} else if !errors.Is(err, domain.ErrNotFound) {
 		return servers.View{}, err

@@ -42,6 +42,10 @@ var (
 
 	ErrInvalidWorld  = errors.New("the archive does not contain a Minecraft world")
 	ErrModpackServer = errors.New("the server runs a modpack, which sets its own version")
+
+	ErrModsUnsupported     = errors.New("the server has no mod loader")
+	ErrModIncompatible     = errors.New("the mod is incompatible with an installed mod")
+	ErrModrinthUnavailable = errors.New("Modrinth unavailable")
 )
 
 // ValidationError describes which input field is invalid. It wraps ErrInvalidInput.
