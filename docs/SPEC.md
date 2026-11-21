@@ -1,4 +1,4 @@
-# Mesquita Panel — Complete Technical Specification
+# Craftkeeper — Complete Technical Specification
 
 **Version:** 1.3  
 **Status:** Approved for implementation  
@@ -740,7 +740,11 @@ mesquita.server_id=<server-id>
 mesquita.game=minecraft
 ```
 
-The application must never assume every container belongs to Mesquita Panel.
+> **Implementation note (2026-11-20, see MEMORY.md D69):** after the rename to Craftkeeper the
+> labels are `craftkeeper.managed`, `craftkeeper.server_id` and `craftkeeper.game`; the
+> `mesquita.*` labels above are no longer recognised.
+
+The application must never assume every container belongs to Craftkeeper.
 
 Docker socket access is root-equivalent.
 
@@ -801,7 +805,7 @@ Target:
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
   -trimpath \
   -ldflags="-s -w" \
-  -o mesquita-panel ./cmd/panel
+  -o craftkeeper ./cmd/panel
 ```
 
 The frontend must be embedded using Go `embed`.
@@ -817,13 +821,13 @@ Production must not require:
 ## Suggested directories
 
 ```text
-/opt/mesquita-panel/
-    mesquita-panel
+/opt/craftkeeper/
+    craftkeeper
 
-/etc/mesquita-panel/
+/etc/craftkeeper/
     config.env
 
-/var/lib/mesquita-panel/
+/var/lib/craftkeeper/
     database.sqlite
     backups/
     logs/
@@ -880,7 +884,7 @@ Prevent public access to the setup process after initialization.
 # 16. Suggested Project Structure
 
 ```text
-mesquita-panel/
+craftkeeper/
 │
 ├── cmd/
 │   └── panel/

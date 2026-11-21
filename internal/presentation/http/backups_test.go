@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/console"
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/console"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // stubConsole stands for a game that never runs: the contract tests only back up stopped

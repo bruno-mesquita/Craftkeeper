@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/servers"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // Runtime reaches a server's container. Both methods check that the container belongs to

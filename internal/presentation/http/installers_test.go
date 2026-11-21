@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // stubSource is the official version catalog for HTTP tests. Its adapter is tested against

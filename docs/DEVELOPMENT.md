@@ -14,13 +14,14 @@ Tailwind CLI v4.3.5 (with its SHA-256).
 | Command | What it does |
 |---|---|
 | `sudo make check` | gofmt check + `go vet` + `go test ./...` + build — run this before declaring work done |
-| `sudo make build` | `bin/mesquita-panel` (linux/amd64, static, `-trimpath -ldflags="-s -w"`) |
+| `sudo make build` | `bin/craftkeeper` (linux/amd64, static, `-trimpath -ldflags="-s -w"`) |
 | `sudo make test` / `sudo make vet` | tests or vet only |
 | `sudo make fmt` | `gofmt -l -w` on `cmd internal migrations web` |
 | `sudo make tidy` | `go mod tidy` |
 | `make css` | regenerate `web/assets/css/app.css` with the standalone Tailwind CLI (downloaded once to `tools/`, checksum-verified) |
-| `make run` | run `bin/mesquita-panel` on `127.0.0.1:8090` with data in `./.data` and debug logs |
+| `make run` | run `bin/craftkeeper` on `127.0.0.1:8090` with data in `./.data` and debug logs |
 | `make clean` | remove `bin/` and `.data/` |
+| `sudo make deploy` | upgrade the installed systemd service with backup, health check and rollback ([INSTALL.md](INSTALL.md#upgrade)) |
 
 Go targets run inside a throwaway `golang` container as the invoking user (`SUDO_UID` /
 `SUDO_GID`), with module and build caches in `.cache/`. Their output is also written to
@@ -68,7 +69,7 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md). In short:
 - HTTP and WebSocket contracts end to end through the real handler.
 
 Tests never touch real containers. Integration tests that need Docker must create containers
-labelled `mesquita.managed=true` with names starting with `mesquita-test-`, and remove only
+labelled `craftkeeper.managed=true` with names starting with `craftkeeper-test-`, and remove only
 what they created.
 
 The backup HTTP tests use the container's real `/tmp` and need more than 2 GiB free there

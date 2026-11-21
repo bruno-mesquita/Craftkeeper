@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/installers"
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
-	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/filesystem"
-	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/sqlite"
-	"github.com/bruno-mesquita/mesquita-panel/migrations"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/installers"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/filesystem"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/sqlite"
+	"github.com/bruno-mesquita/Craftkeeper/migrations"
 )
 
 // fakeRuntime keeps containers in memory and can fail chosen operations.

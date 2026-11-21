@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 const serverID = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -123,13 +123,13 @@ func TestCreateContainerPolicy(t *testing.T) {
 	d.on("POST /containers/create", http.StatusCreated, `{"Id":"`+idRunning+`","Warnings":[]}`)
 
 	id, err := r.Create(context.Background(), domain.ContainerSpec{
-		ServerID: serverID, Game: "minecraft", Java: domain.Java17, Env: []string{"EULA=TRUE"}, DataDir: "/var/lib/mesquita-panel/servers/" + serverID,
+		ServerID: serverID, Game: "minecraft", Java: domain.Java17, Env: []string{"EULA=TRUE"}, DataDir: "/var/lib/craftkeeper/servers/" + serverID,
 		Port: 25601, MemoryMB: 2048, CPUMillicores: 1500,
 	})
 	if err != nil || id != idRunning {
 		t.Fatalf("Create = %q, %v", id, err)
 	}
-	if q := d.queries["POST /containers/create"]; q != "name=mesquita-abcdefghijklmnopqrstuvwxyz" {
+	if q := d.queries["POST /containers/create"]; q != "name=craftkeeper-abcdefghijklmnopqrstuvwxyz" {
 		t.Fatalf("query = %q", q)
 	}
 
@@ -160,8 +160,8 @@ func TestCreateContainerPolicy(t *testing.T) {
 			t.Errorf("%s = %s, want %s", name, b, want)
 		}
 	}
-	mustJSON("labels", got["Labels"], `{"mesquita.game":"minecraft","mesquita.managed":"true","mesquita.server_id":"`+serverID+`"}`)
-	mustJSON("binds", hc["Binds"], `["/var/lib/mesquita-panel/servers/`+serverID+`:/data"]`)
+	mustJSON("labels", got["Labels"], `{"craftkeeper.game":"minecraft","craftkeeper.managed":"true","craftkeeper.server_id":"`+serverID+`"}`)
+	mustJSON("binds", hc["Binds"], `["/var/lib/craftkeeper/servers/`+serverID+`:/data"]`)
 	mustJSON("ports", hc["PortBindings"], `{"25565/tcp":[{"HostIp":"0.0.0.0","HostPort":"25601"}]}`)
 	mustJSON("cap drop", hc["CapDrop"], `["ALL"]`)
 	mustJSON("security", hc["SecurityOpt"], `["no-new-privileges"]`)

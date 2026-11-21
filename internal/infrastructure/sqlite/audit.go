@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 type AuditLog struct {

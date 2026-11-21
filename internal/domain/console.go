@@ -30,7 +30,7 @@ type ConsoleLine struct {
 // ContainerEvent is a lifecycle event of a managed container, as reported by Docker.
 type ContainerEvent struct {
 	ContainerID string
-	ServerID    string // mesquita.server_id label; may be empty or stale, never trusted alone
+	ServerID    string // server ID label; may be empty or stale, never trusted alone
 	Action      string // start, die, stop, restart, health_status, destroy…
 }
 

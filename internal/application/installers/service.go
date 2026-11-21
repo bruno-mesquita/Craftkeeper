@@ -8,8 +8,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/ttlcache"
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/ttlcache"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // VersionSource reads the official version lists. Every value is already validated.

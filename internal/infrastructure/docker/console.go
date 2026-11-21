@@ -15,7 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 const (
@@ -267,11 +267,12 @@ func (s *eventStream) Next() (domain.ContainerEvent, error) {
 		if json.Unmarshal(s.sc.Bytes(), &m) != nil {
 			continue
 		}
-		if m.Type != "container" || m.Actor.Attributes[LabelManaged] != managedLabelValue || !validContainerID(m.Actor.ID) {
+		serverID, managed := managedBy(m.Actor.Attributes)
+		if m.Type != "container" || !managed || !validContainerID(m.Actor.ID) {
 			continue
 		}
 		action, _, _ := strings.Cut(m.Action, ":") // "health_status: healthy"
-		return domain.ContainerEvent{ContainerID: m.Actor.ID, ServerID: m.Actor.Attributes[LabelServerID], Action: action}, nil
+		return domain.ContainerEvent{ContainerID: m.Actor.ID, ServerID: serverID, Action: action}, nil
 	}
 	if err := s.sc.Err(); err != nil {
 		return domain.ContainerEvent{}, err

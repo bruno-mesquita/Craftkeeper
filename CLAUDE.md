@@ -1,4 +1,4 @@
-# CLAUDE.md — Mesquita Panel
+# CLAUDE.md — Craftkeeper
 
 Painel self-hosted e leve para gerenciar game servers (Minecraft primeiro) em containers Docker.
 Backend Go, frontend HTML + Vanilla JS (ES modules, Web Components) + Tailwind CSS v4, tudo
@@ -28,9 +28,9 @@ O repositório vive no próprio servidor que roda Crafty e os servidores Minecra
 - Bind em portas já usadas (ver MEMORY.md) ou em `0.0.0.0` por padrão.
 
 **Permitido:** container efêmero de build/test (`docker run --rm golang:<tag>`), e
-containers/imagens que o próprio painel criou com label `mesquita.managed=true`.
-Testes de integração Docker usam label `mesquita.managed=true` **e** nome com prefixo
-`mesquita-test-`, e limpam só o que criaram.
+containers/imagens que o próprio painel criou com label `craftkeeper.managed=true`.
+Testes de integração Docker usam label `craftkeeper.managed=true` **e** nome com prefixo
+`craftkeeper-test-`, e limpam só o que criaram.
 
 Nota: o usuário `bruno-mesquita` **não tem acesso** a `/var/run/docker.sock`. Se um comando
 Docker falhar por permissão, pedir ao usuário (ex.: rodar com `! sudo make test`); não
@@ -45,7 +45,7 @@ Go **não** está instalado no host. Tudo roda em container pinado via `Makefile
 | Alvo | O que faz |
 |---|---|
 | `sudo make check` | gofmt + vet + test + build num só passo (use este) |
-| `make build` | `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o bin/mesquita-panel ./cmd/panel` dentro de `golang:<tag exata>` |
+| `make build` | `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o bin/craftkeeper ./cmd/panel` dentro de `golang:<tag exata>` |
 | `make test` | `go test ./...` (com `-race` exige CGO; rodar race em alvo separado se necessário) |
 | `make vet` / `make fmt` | `go vet ./...` / `gofmt -l -w .` |
 | `make css` | Tailwind v4 **standalone CLI** (binário pinado + SHA-256 em `tools/`, gitignored) gera `web/assets/css/app.css`, que é **commitado** |
@@ -119,7 +119,7 @@ São contratos públicos; mudar exige atualizar a doc correspondente **e** os te
 - Autenticação + autorização; CSRF (header de token) em todo método mutante.
 - Validar input e limitar tamanho de body (`http.MaxBytesReader`), uploads e mensagens WS.
 - Filesystem: usar `os.Root` (Go 1.24+) para confinar ao diretório do servidor; bloquear traversal e symlink escape; testar.
-- Docker: allowlist de operações; só agir em containers com `mesquita.managed=true` **e** `mesquita.server_id` conhecido no banco. Nunca repassar comando shell arbitrário ao host.
+- Docker: allowlist de operações; só agir em containers com `craftkeeper.managed=true` **e** `craftkeeper.server_id` conhecido no banco. Nunca repassar comando shell arbitrário ao host.
 - Login com rate limit; sem senha padrão; endpoint de setup inacessível depois de concluído.
 - Cookies `HttpOnly`, `SameSite=Strict`, `Secure` quando servido sob TLS.
 - Auditar ações administrativas (audit_log).

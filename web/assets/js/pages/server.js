@@ -224,7 +224,7 @@ export function mount(root, { param: id }) {
 
   function renderHeader() {
     if (!server) return;
-    document.title = `${server.name} · Mesquita Panel`;
+    document.title = `${server.name} · Craftkeeper`;
     title.textContent = server.name;
     const st = STATUS[server.status] ?? STATUS.unknown;
     status.textContent = busy ?? st.label;

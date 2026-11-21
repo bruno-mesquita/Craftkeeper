@@ -176,6 +176,35 @@ export function mountIconManager(root, { id, onRestart, onChange }) {
   };
 }
 
+// adoptPackIcon turns the icon.png a server pack ships into the server-icon.png the game reads,
+// placed next to it (the pack's own root, where its scripts start the game). dirs are the
+// directories to look in, in order; the first icon.png found wins. An existing server-icon.png
+// is never replaced. Returns whether an icon was written.
+export async function adoptPackIcon(id, dirs) {
+  const fileURL = (p) => `/api/v1/servers/${id}/files/download?path=${encodeURIComponent(p)}`;
+  for (const dir of new Set(dirs)) {
+    const at = (name) => (dir ? `${dir}/${name}` : name);
+    const existing = await fetch(fileURL(at(ICON)), { credentials: 'same-origin' });
+    if (existing.ok) return false;
+    if (existing.status !== 404) continue;
+    const res = await fetch(fileURL(at('icon.png')), { credentials: 'same-origin' });
+    if (!res.ok) continue;
+    const source = await res.blob();
+    if (source.size > MAX_SOURCE) continue;
+    let blob;
+    try {
+      const canvas = await toIcon(new Blob([source], { type: 'image/png' }));
+      blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    } catch {
+      continue; // not an image the browser can read
+    }
+    if (!blob) continue;
+    await upload(`/servers/${id}/files/upload?path=${encodeURIComponent(dir)}&overwrite=false`, [new File([blob], ICON, { type: 'image/png' })]);
+    return true;
+  }
+  return false;
+}
+
 // toIcon center-crops the image to a square and scales it to SIZE×SIZE. Small sources (pixel
 // art) are scaled without smoothing to stay crisp.
 async function toIcon(file) {

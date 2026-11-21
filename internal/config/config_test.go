@@ -15,10 +15,10 @@ func TestDefaults(t *testing.T) {
 	if len(c.Listen) != 1 || c.Listen[0] != "127.0.0.1:8090" {
 		t.Fatalf("listen = %v", c.Listen)
 	}
-	if c.GamePorts != (PortRange{First: 25601, Last: 25700}) || c.ServersDir() != "/var/lib/mesquita-panel/servers" {
+	if c.GamePorts != (PortRange{First: 25601, Last: 25700}) || c.ServersDir() != "/var/lib/craftkeeper/servers" {
 		t.Fatalf("game ports = %+v, servers dir = %s", c.GamePorts, c.ServersDir())
 	}
-	if c.DataDir != "/var/lib/mesquita-panel" || c.DockerSocket != "/var/run/docker.sock" || c.LogLevel != slog.LevelInfo {
+	if c.DataDir != "/var/lib/craftkeeper" || c.DockerSocket != "/var/run/docker.sock" || c.LogLevel != slog.LevelInfo {
 		t.Fatalf("unexpected defaults %+v", c)
 	}
 }

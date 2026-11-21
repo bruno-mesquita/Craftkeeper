@@ -53,11 +53,11 @@ jobs:
         run: go test ./...
 
       - name: go build
-        run: go build -trimpath -ldflags="-s -w" -o bin/mesquita-panel ./cmd/panel
+        run: go build -trimpath -ldflags="-s -w" -o bin/craftkeeper ./cmd/panel
 
       - uses: actions/upload-artifact@v4
         with:
-          name: mesquita-panel-linux-amd64
-          path: bin/mesquita-panel
+          name: craftkeeper-linux-amd64
+          path: bin/craftkeeper
           if-no-files-found: error
           retention-days: 7

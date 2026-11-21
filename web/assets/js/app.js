@@ -55,7 +55,7 @@ async function route() {
   teardown();
   shell ??= renderShell(app, { routes, session, onLogout: logout });
   shell.setActive(name);
-  document.title = `${def.title} · Mesquita Panel`;
+  document.title = `${def.title} · Craftkeeper`;
   const page = await (param !== undefined ? def.detail() : def.load());
   if (current !== navigation) return;
   cleanup = page.mount(shell.main, { session, route: def, param }) ?? null;

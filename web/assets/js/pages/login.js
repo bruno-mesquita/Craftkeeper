@@ -24,6 +24,6 @@ export function mount(root, { onDone }) {
     }
   });
 
-  root.replaceChildren(authLayout('Mesquita Panel', 'Sign in to continue', form));
+  root.replaceChildren(authLayout('Craftkeeper', 'Sign in to continue', form));
   form.elements.username.focus();
 }

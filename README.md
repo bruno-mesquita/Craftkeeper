@@ -23,9 +23,6 @@ everything is embedded in a single ~14 MB binary. It is an alternative to
 [Crafty Controller](https://craftycontrol.com/) and [Pterodactyl](https://pterodactyl.io/)
 for people who want something small enough to read and audit.
 
-> **Naming note:** the product is Craftkeeper, but the Go binary, systemd unit, paths and
-> container labels still use the original name `mesquita-panel` / `mesquita.managed`.
-
 ## Screenshots
 
 <!--
@@ -72,7 +69,7 @@ _Coming soon._
 - Argon2id passwords, server-side sessions, CSRF on every mutating request, login rate limit,
   one-time setup token, audit trail.
 - Never binds `0.0.0.0` by default; acts only on containers it created
-  (`mesquita.managed=true` + known `server_id`); game containers run non-root with no
+  (`craftkeeper.managed=true` + known `server_id`); game containers run non-root with no
   capabilities. See [Security](docs/SECURITY.md).
 
 ## Architecture at a glance

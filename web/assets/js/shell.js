@@ -17,7 +17,7 @@ export function renderShell(root, { routes, session, onLogout }) {
   const sidebar = h('aside', { class: 'flex w-full shrink-0 flex-col gap-6 border-b border-border bg-surface p-4 md:sticky md:top-0 md:h-dvh md:w-60 md:border-r md:border-b-0' },
     h('div', { class: 'flex items-center gap-3 px-1' },
       h('img', { src: '/assets/icons/logo.svg', alt: '', width: '32', height: '32' }),
-      h('span', { class: 'text-lg leading-none font-bold tracking-tight' }, 'Mesquita', h('span', { class: 'block pt-1 font-mono text-[0.65rem] font-medium text-muted' }, 'panel'))),
+      h('span', { class: 'text-lg leading-none font-bold tracking-tight' }, 'Craftkeeper')),
     nav,
     h('div', { class: 'mt-auto flex items-center justify-between gap-2 border-t border-border pt-4' },
       h('span', { class: 'truncate font-medium', title: session.user.username }, session.user.username),

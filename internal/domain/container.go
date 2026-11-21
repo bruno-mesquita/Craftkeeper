@@ -13,7 +13,7 @@ type ContainerSnapshot struct {
 type ContainerStats struct {
 	ID       string
 	Name     string
-	ServerID string // value of the mesquita.server_id label; empty when absent
+	ServerID string // value of the server ID label; empty when absent
 	State    string // Docker state: created, running, paused, restarting, exited, dead…
 
 	CPUPercent float64 // 100 = one full core; rate since the previous sample

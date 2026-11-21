@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // URLs are the endpoints of the version sources.
@@ -41,7 +41,7 @@ var Official = URLs{
 const (
 	fetchTimeout = 15 * time.Second
 	maxBody      = 8 << 20
-	userAgent    = "mesquita-panel"
+	userAgent    = "craftkeeper"
 )
 
 type Sources struct {

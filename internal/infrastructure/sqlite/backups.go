@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // Backups stores backup metadata and schedules. Rows are removed with their server

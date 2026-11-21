@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // Game server images (itzg/minecraft-server release 2026.11.0), one per Java runtime, each
@@ -46,7 +46,7 @@ const (
 	gameBindIP         = "0.0.0.0"
 	stopTimeoutSeconds = 60
 	pidsLimit          = 2048
-	containerPrefix    = "mesquita-"
+	containerPrefix    = "craftkeeper-"
 
 	stopCallTimeout = (stopTimeoutSeconds + 15) * time.Second
 	pullTimeout     = 10 * time.Minute
@@ -56,7 +56,7 @@ const (
 
 // Runtime manages game server containers. Every method maps to one allowlisted Engine API
 // endpoint, and every operation on an existing container first checks that the container
-// carries mesquita.managed=true and the expected mesquita.server_id.
+// carries the managed label and the expected server ID label.
 type Runtime struct {
 	client   *Client
 	user     string // uid:gid the game process runs as, so its files belong to the panel
@@ -142,28 +142,31 @@ type createRequest struct {
 
 // serverEntrypoint preserves the itzg launcher for ordinary servers. A configured modpack
 // uses its first start for a one-shot install, then its selected script for later starts.
+// When the installer and startup script are the same file it runs only once, as the launcher.
 // Both scripts run inside the already constrained, non-root server container.
-const serverEntrypoint = `if [ -f /data/.mesquita-modpack ]; then
-  exec 3< /data/.mesquita-modpack
+const serverEntrypoint = `if [ -f /data/.craftkeeper-modpack ]; then
+  exec 3< /data/.craftkeeper-modpack
   IFS= read -r installer <&3
   IFS= read -r launcher <&3
   exec 3<&-
   cd /data || exit 1
-  if [ ! -f /data/.mesquita-modpack-installed ]; then
-    echo '[Mesquita] Installing modpack with '"$installer"
+  if [ ! -f /data/.craftkeeper-modpack-installed ] && [ "$installer" = "$launcher" ]; then
+    touch /data/.craftkeeper-modpack-installed
+  elif [ ! -f /data/.craftkeeper-modpack-installed ]; then
+    echo '[Craftkeeper] Installing modpack with '"$installer"
     installer_dir=${installer%/*}; installer_name=${installer##*/}
     [ "$installer_dir" = "$installer" ] && installer_dir=.
     cd "/data/$installer_dir" || exit 1
     /bin/bash "./$installer_name"
     result=$?
     if [ "$result" -ne 0 ]; then
-      echo "[Mesquita] Installer exited with status $result. Stop this server before retrying installation."
+      echo "[Craftkeeper] Installer exited with status $result. Stop this server before retrying installation."
       while :; do sleep 3600; done
     fi
-    touch /data/.mesquita-modpack-installed
-    echo '[Mesquita] Installation complete. Starting the modpack.'
+    touch /data/.craftkeeper-modpack-installed
+    echo '[Craftkeeper] Installation complete. Starting the modpack.'
   fi
-  echo '[Mesquita] Starting modpack with '"$launcher"
+  echo '[Craftkeeper] Starting modpack with '"$launcher"
   launcher_dir=${launcher%/*}; launcher_name=${launcher##*/}
   [ "$launcher_dir" = "$launcher" ] && launcher_dir=.
   cd "/data/$launcher_dir" || exit 1
@@ -270,6 +273,14 @@ type inspectResponse struct {
 	} `json:"Config"`
 }
 
+// ownedBy checks that the inspected container is id and belongs to serverID.
+func (x *inspectResponse) ownedBy(id, serverID string) error {
+	if owner, ok := managedBy(x.Config.Labels); x.ID != id || !ok || owner != serverID {
+		return fmt.Errorf("%w: container %s, server %s", domain.ErrNotManaged, id, serverID)
+	}
+	return nil
+}
+
 // Inspect returns the state of a server's container after checking that it belongs to it.
 func (r *Runtime) Inspect(ctx context.Context, id, serverID string) (domain.ContainerState, error) {
 	if !validContainerID(id) {
@@ -279,8 +290,8 @@ func (r *Runtime) Inspect(ctx context.Context, id, serverID string) (domain.Cont
 	if _, err := r.client.call(ctx, http.MethodGet, "/containers/"+id+"/json", nil, defaultTimeout, maxInspectBytes, &x); err != nil {
 		return domain.ContainerState{}, mapError("inspect container", err)
 	}
-	if x.ID != id || x.Config.Labels[LabelManaged] != managedLabelValue || x.Config.Labels[LabelServerID] != serverID {
-		return domain.ContainerState{}, fmt.Errorf("%w: container %s, server %s", domain.ErrNotManaged, id, serverID)
+	if err := x.ownedBy(id, serverID); err != nil {
+		return domain.ContainerState{}, err
 	}
 	st := domain.ContainerState{ID: id, ServerID: serverID, State: x.State.Status, RestartCount: x.RestartCount}
 	if x.State.Health != nil {
@@ -297,7 +308,8 @@ func (r *Runtime) States(ctx context.Context) ([]domain.ContainerState, error) {
 	}
 	out := make([]domain.ContainerState, 0, len(list))
 	for _, c := range list {
-		st := domain.ContainerState{ID: c.ID, ServerID: c.Labels[LabelServerID], State: c.State}
+		serverID, _ := managedBy(c.Labels)
+		st := domain.ContainerState{ID: c.ID, ServerID: serverID, State: c.State}
 		// The list endpoint has no health field; its documented Status text carries it.
 		if strings.Contains(c.Status, "(health: starting)") {
 			st.Health = "starting"
@@ -355,8 +367,8 @@ func (r *Runtime) RenameReplaced(ctx context.Context, id, serverID string, repla
 	if _, err := r.client.call(ctx, http.MethodGet, "/containers/"+id+"/json", nil, defaultTimeout, maxInspectBytes, &x); err != nil {
 		return mapError("inspect container", err)
 	}
-	if x.ID != id || x.Config.Labels[LabelManaged] != managedLabelValue || x.Config.Labels[LabelServerID] != serverID {
-		return fmt.Errorf("%w: container %s, server %s", domain.ErrNotManaged, id, serverID)
+	if err := x.ownedBy(id, serverID); err != nil {
+		return err
 	}
 	name := ContainerName(serverID)
 	if replaced {

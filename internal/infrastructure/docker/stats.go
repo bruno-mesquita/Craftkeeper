@@ -10,14 +10,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // Labels that identify containers created by the panel (spec §11).
 const (
-	LabelManaged  = "mesquita.managed"
-	LabelServerID = "mesquita.server_id"
-	LabelGame     = "mesquita.game"
+	LabelManaged  = "craftkeeper.managed"
+	LabelServerID = "craftkeeper.server_id"
+	LabelGame     = "craftkeeper.game"
 )
 
 const (
@@ -31,6 +31,15 @@ var managedFilter = url.Values{
 	"all":     {"true"},
 	"filters": {`{"label":["` + LabelManaged + `=` + managedLabelValue + `"]}`},
 }.Encode()
+
+// managedBy reports whether labels mark a container created by the panel and the server ID
+// they name.
+func managedBy(labels map[string]string) (serverID string, ok bool) {
+	if labels[LabelManaged] != managedLabelValue {
+		return "", false
+	}
+	return labels[LabelServerID], true
+}
 
 // StatsCollector samples resource usage of managed containers. CPU and network rates are
 // computed against the previous Collect, like the host collector, so no background
@@ -56,9 +65,9 @@ type containerSummary struct {
 	Labels map[string]string `json:"Labels"`
 }
 
-// listManaged lists every container labelled mesquita.managed=true, running or not.
-// The daemon-side filter is never trusted alone: the label and the ID format are re-checked.
-// A failure means Docker is unavailable.
+// listManaged lists every container created by the panel, running or not. The daemon-side
+// filter is never trusted alone: the label and the ID format are re-checked. A failure means
+// Docker is unavailable.
 func (c *Client) listManaged(ctx context.Context) ([]containerSummary, error) {
 	var list []containerSummary
 	if err := c.getJSON(ctx, "/containers/json?"+managedFilter, maxListBytes, &list); err != nil {
@@ -66,7 +75,7 @@ func (c *Client) listManaged(ctx context.Context) ([]containerSummary, error) {
 	}
 	out := list[:0]
 	for _, x := range list {
-		if x.Labels[LabelManaged] == managedLabelValue && validContainerID(x.ID) {
+		if _, ok := managedBy(x.Labels); ok && validContainerID(x.ID) {
 			out = append(out, x)
 		}
 	}
@@ -120,10 +129,11 @@ func (s *StatsCollector) CollectContainers(ctx context.Context) (domain.Containe
 
 	out := make([]domain.ContainerStats, 0, len(list))
 	for _, c := range list {
+		serverID, _ := managedBy(c.Labels)
 		out = append(out, domain.ContainerStats{
 			ID:       c.ID,
 			Name:     containerName(c.Names),
-			ServerID: c.Labels[LabelServerID],
+			ServerID: serverID,
 			State:    c.State,
 		})
 	}

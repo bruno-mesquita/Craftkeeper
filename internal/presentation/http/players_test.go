@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // recordConsole remembers the commands sent to the "running" game.

@@ -1,9 +1,9 @@
-# MEMORY.md — Mesquita Panel
+# MEMORY.md — Craftkeeper
 
 Registro vivo de fatos do host, decisões arquiteturais e estado do projeto.
 Atualizar sempre que algo aqui mudar. Spec completa: [`docs/SPEC.md`](docs/SPEC.md).
 
-Última atualização: **2026-11-19**
+Última atualização: **2026-11-21**
 
 ---
 
@@ -77,7 +77,7 @@ Formato: decisão — motivo — consequência.
 - **D40 · Restore síncrono em duas fases** — exige `stopped`/`missing`; extrai em `servers/.restore-<id>-<rand>` (uid:gid do container), reconfere o status e troca: atual → `servers/.deleted/<id>-<unix>-pre-restore` (escolha do usuário), staging → `<id>`. Ligou no meio → descarta, `409`. Cancelar a requisição descarta (nada muda). Modos viram 0640/0750.
 - **D41 · Um create/restore por servidor** (`409 backup_in_progress`); delete recusa backup `creating` ou restore em andamento. `ServerDirs.Remove/Archive` cuidam também de `backups/<id>` (mesma política D23). Servidor apagado durante um job: linha some por cascade, job apaga o arquivo órfão.
 - **D42 · Agendamento por intervalo + retenção** (escolha do usuário) — `interval_hours` 0–720, `retain` 0–100 (0 = todos), só backups agendados (manuais nunca são apagados sozinhos; agendados `failed` são limpos após um sucesso). `backups.Service.Run`: ticker 1 min; ocupado → tenta no próximo tick; outra recusa → grava backup agendado `failed` (aparece na lista) e espera um intervalo; mantém a cadência (`next += interval`), após downtime roda uma vez e segue de agora. Mudar só `retain` mantém o próximo horário.
-- **D43 · Catálogo de versões pelas fontes oficiais, HTTPS fixo** (escolha do usuário, 2026-11-17) — Mojang `piston-meta`, Fabric `meta.fabricmc.net`, Forge `maven.minecraftforge.net` + `promotions_slim.json`, NeoForge `maven.neoforged.net`. URLs constantes em `gameversions.Official` (a spec fala em "configurable": desvio consciente, são fixas). "Verified" = TLS com CAs do host + versões exatas pinadas + imagem por digest (o itzg baixa das mesmas fontes). Timeout 15 s, ≤ 8 MiB, User-Agent `mesquita-panel`; cache 1 h por fonte (`application/ttlcache`, extraído do monitoring); fonte fora sem cache → `503 installer_unavailable`. Tudo o que sai das fontes passa pelas regex do domain antes de virar env do container.
+- **D43 · Catálogo de versões pelas fontes oficiais, HTTPS fixo** (escolha do usuário, 2026-11-17) — Mojang `piston-meta`, Fabric `meta.fabricmc.net`, Forge `maven.minecraftforge.net` + `promotions_slim.json`, NeoForge `maven.neoforged.net`. URLs constantes em `gameversions.Official` (a spec fala em "configurable": desvio consciente, são fixas). "Verified" = TLS com CAs do host + versões exatas pinadas + imagem por digest (o itzg baixa das mesmas fontes). Timeout 15 s, ≤ 8 MiB, User-Agent `craftkeeper`; cache 1 h por fonte (`application/ttlcache`, extraído do monitoring); fonte fora sem cache → `503 installer_unavailable`. Tudo o que sai das fontes passa pelas regex do domain antes de virar env do container.
 - **D44 · Versões pinadas para modded** — Fabric/Forge/NeoForge exigem MC concreto (sem `LATEST`) e `loader_version` existente no catálogo; omitido = recomendado, gravado (migration `0004`). Sem isso o itzg re-resolve a versão a cada start e atualiza o loader sob os mods. Vanilla mantém `LATEST` e não depende da rede. Recomendado: Fabric = stable mais novo; Forge = promo `recommended` → `latest` → mais novo; NeoForge = mais novo sem `-beta`. NeoForge→MC: `21.1.x`→`1.21.1`, `21.0.x`→`1.21`; ≥ 26: `26.1.2.127`→`26.1.2`, `26.3.0.110`→`26.3`. Forge: entradas `<mc>-<build>` com sufixo extra (1.7.10, 1.10, …) são ignoradas. Trocar loader/versão de servidor existente e modpacks: fora do escopo.
 - **D45 · Imagem Java por versão do MC** (escolha do usuário: automático, sem override) — `≤1.16.5`→java8, `1.17–1.20.4`→java17, `1.20.5–1.21.x`→java21, `26.x`/`LATEST`→java25. Tags `2026.11.0-java8/17/21` + `2026.11.0` (= `-java25`), digests lidos do Docker Hub em 2026-11-17, em `docker.gameImages` (allowlist; java desconhecido nunca chega ao daemon). Pull só quando usada. Derivada da versão gravada, não persistida. Resolve a pendência de versões antigas da D19.
 - **D46 · Identidade visual "deepslate + lanterna"** (2026-11-17) — sair do visual shadcn (zinc + azul). Tokens em `web/styles/app.css`: fundo deepslate `#0f1316`, texto pergaminho `#ebe6d6`, acento âmbar `#f0b040`, sucesso musgo, perigo redstone. Fontes vendorizadas em `web/assets/fonts/` (Bricolage Grotesque + JetBrains Mono, SIL OFL, variáveis, só latin; CSP `font-src 'self'`). Medidor segmentado (`.meter`, máscara de blocos de 6px), badges com LED pulsante, logo "M" pixelado. Sem mudança de API/JS de comportamento.
@@ -92,10 +92,13 @@ Formato: decisão — motivo — consequência.
 - **D62 · `application/maintenance`** — versão, reset e import de mundo: valida o que é barato (input, `level-name`, zip) → `Protect` → reconfere parado → aplica. Mundo = `level-name` do `server.properties` (default `world`, `domain.LevelName` via `CleanServerPath`). Reset apaga a pasta e, com `seed`, grava `level-seed` (com versão, D35). Import: zip já enviado pelo upload existente, extraído (limites D33) em `.mesquita-tmp-world-*` (ignorado pelo backup; `CleanupStale` agora limpa `.mesquita-tmp-*` no topo de cada pasta de servidor), `level.dat` na raiz ou numa única pasta de topo (`__MACOSX` ignorado), senão `422 invalid_world` sem backup; zip apagado depois de extraído. Export = download da pasta pela API de arquivos (só frontend). Layout Bukkit fora do escopo. Requests síncronas, deadline 45 min.
 - **D63 · Operadores pelo padrão da whitelist** — `op`/`deop` pelo console rodando; parado edita `ops.json` (`level` = `op-permission-level`, default 4; `bypassesPlayerLimit=false`). Audit `player.op`/`player.deop`.
 - **D64 · Mods sem estado no banco: identificados pelo hash** (Fase 12, 2026-11-19) — `mods/*.jar` e `*.jar.disabled` são o estado; SHA-512 em cache de memória (servidor + nome, invalidado por tamanho/mtime, podado a cada listagem); Modrinth identifica (`POST /v2/version_files`) e acha updates (`/version_files/update` com loader + MC do servidor; só oferece se publicado depois). Jar desconhecido = "manual". Sem migration; uploads manuais e restores ficam coerentes.
-- **D65 · Cliente Modrinth fixo + download verificado** — `infrastructure/modrinth` (`URLs`/`Official`, User-Agent `mesquita-panel`, JSON ≤ 8 MiB, timeout 15 s; download sem timeout total, só o ctx da requisição + timeouts de handshake/cabeçalho). Só baixa de `https://cdn.modrinth.com/` (redirect para fora recusado), ≤ 256 MiB, reader confere tamanho + SHA-512 e falha **antes** do EOF → `ServerFiles.Save` (D32) descarta o temporário. Reserva de 2 GiB (`ServerFiles.FreeBytes`). Nome gravado sanitizado (`domain.SafeModFileName`). Fonte fora/hash errado → `503 modrinth_unavailable`; listagem degrada (`catalog_unavailable`).
+- **D65 · Cliente Modrinth fixo + download verificado** — `infrastructure/modrinth` (`URLs`/`Official`, User-Agent `craftkeeper`, JSON ≤ 8 MiB, timeout 15 s; download sem timeout total, só o ctx da requisição + timeouts de handshake/cabeçalho). Só baixa de `https://cdn.modrinth.com/` (redirect para fora recusado), ≤ 256 MiB, reader confere tamanho + SHA-512 e falha **antes** do EOF → `ServerFiles.Save` (D32) descarta o temporário. Reserva de 2 GiB (`ServerFiles.FreeBytes`). Nome gravado sanitizado (`domain.SafeModFileName`). Fonte fora/hash errado → `503 modrinth_unavailable`; listagem degrada (`catalog_unavailable`).
 - **D66 · Escopo e regras dos mods** (escolhas do usuário, 2026-11-18) — só modded sem modpack (`409 mods_unsupported`/`modpack_server`; `domain.ModpackConfigFile` consolidado). Mudanças permitidas com o servidor rodando (UI mostra "Restart"). Versão = release mais nova compatível (senão a mais nova). Deps `required` em largura, puladas se o projeto já está instalado (ativo ou não), ≤ 32 arquivos por operação; `incompatible` em qualquer sentido → `409 mod_incompatible`. Install tudo-ou-nada (remove o que escreveu). Update: `backups.Protect` opcional (campo `backup`, padrão `false` na API; checkbox marcado por padrão na UI — pedido do usuário, 2026-11-19; install/remove nunca fazem backup) → baixa → remove o antigo; desativado continua desativado. Ativar/desativar = renomear `.jar` ↔ `.jar.disabled`. Uma operação de mods por servidor (`409 server_busy`). Busca: `project_type:mod`, `categories:<loader>`, `versions:<mc>`, `server_side` required/optional.
 - **D67 · Ícones de mods por proxy** — `GET /api/v1/mods/icons/{project_id}`: o backend resolve o `icon_url` (cache 1 h, ≤ 1024 entradas), só host do CDN, ≤ 256 KiB, PNG/JPEG/GIF/WebP por sniff (SVG recusado), `Cache-Control: private, max-age=86400`. Cliente nunca passa URL; CSP inalterada.
-- **D10 · systemd com usuário dedicado `mesquita-panel`** — princípio do menor privilégio. — Precisa estar no grupo `docker` (root-equivalente) a partir da Fase 3; criação do usuário e grupo exige autorização no deploy.
+- **D68 · Modpack com o mesmo script para instalar e iniciar** (pedido do usuário, 2026-11-20) — `PUT /modpack` aceita `install_script == start_script`; o wrapper do container pula a etapa de instalação, grava `.mesquita-modpack-installed` e executa o script uma única vez por start (como launcher).
+- **D10 · systemd com usuário dedicado `craftkeeper`** — princípio do menor privilégio. — Precisa estar no grupo `docker` (root-equivalente) a partir da Fase 3; criação do usuário e grupo exige autorização no deploy.
+- **D69 · Renomeado para Craftkeeper** (escolha do usuário, 2026-11-20) — o repo/README já se chamavam Craftkeeper. Módulo `github.com/bruno-mesquita/Craftkeeper`; binário, unit, usuário, `/opt|/etc|/var/lib/craftkeeper`. Runtime: labels `craftkeeper.managed/server_id/game`, container `craftkeeper-<id>`, marcadores `domain.Modpack{Config,Installed,Supported}File` = `.craftkeeper-modpack{,-installed,-supported}`, temporários `.craftkeeper-tmp-*`, cookie `craftkeeper_session`. A migração dos containers `mesquita.*` (recriação via `servers.swapContainer`, extraído da D60) rodou uma vez e o único container legado foi migrado e verificado pelo usuário (2026-11-21); a compatibilidade foi **removida** em seguida — labels e marcadores `mesquita*` não são mais reconhecidos. `AuditServerMigrate` (`server.migrate`) fica só para as linhas antigas do audit. Decisões antigas citam os nomes `mesquita*` como histórico.
+- **D70 · Deploy por script local `sudo make deploy`** (escolha do usuário, 2026-11-20) — repo público: runner self-hosted rodaria código de PR na produção; push pelo CI exigiria chave root no GitHub. — `deployments/deploy.sh` só faz upgrade (recusa sem root/unit/binário): `make check` (falha → nada muda) → stop → backup frio do SQLite + binário em `/var/backups/craftkeeper/<UTC>-<rev>/` (5 mais novos) → install → start → `/api/v1/health` por 30 s → senão rollback de binário **e** banco + `journalctl`. `SKIP_BUILD=1`, `HEALTH_URL`. Saída em `.cache/deploy.log`. Primeira instalação segue manual (INSTALL.md §1–8b, autorização).
 
 ---
 
@@ -106,7 +109,7 @@ Formato: decisão — motivo — consequência.
 - [x] Versões pinadas: Go `golang:1.27.4-trixie`, Tailwind CLI v4.3.5 (SHA-256 no Makefile), `modernc.org/sqlite` v1.61.1, `golang.org/x/crypto` v0.58.0.
 - [x] `make` instalado. Fluxo: usuário roda `sudo make check` num terminal próprio; Claude lê `.cache/last-run.log`.
 - [ ] Cookie `Secure` exige HTTPS: avaliar `tailscale serve` para TLS no acesso remoto.
-- [x] Git: branch `main`, módulo `github.com/bruno-mesquita/mesquita-panel`, identidade configurada. Commits (Fases 1 e 2) **só locais** — não fazer push sem o usuário pedir (ele ainda vai instalar o `gh`).
+- [x] Git: branch `main`, módulo `github.com/bruno-mesquita/Craftkeeper`, identidade configurada. Commits (Fases 1 e 2) **só locais** — não fazer push sem o usuário pedir (ele ainda vai instalar o `gh`).
 - [ ] `.data/` local contém um banco de teste (usuário `bruno`, senha `senha-de-teste-123`) — rodar `make clean` antes de testar a UI de verdade.
 - [ ] Confirmar o que ocupa 8080 (provável stack de mídia), só para documentação.
 
@@ -282,7 +285,7 @@ Plano: `~/.claude/plans/preciso-que-seja-possivel-twinkling-wadler.md`.
   grafia da Mojang em `whitelist.json`/`banned-players.json` (port `players.Accounts`). Nome
   inexistente → `422` (campo `name`); Mojang fora/429 → `503 account_lookup_unavailable`.
   Offline-mode continua com `OfflineUUID` sem rede. Hosts fixos, timeout 15 s, User-Agent
-  `mesquita-panel`, sem cache de lookup.
+  `craftkeeper`, sem cache de lookup.
 - **D51 · Avatar por proxy** — `GET /api/v1/players/{uuid}/avatar` (auth): sessionserver →
   textures (só aceita host `textures.minecraft.net` + hash hex, refeito em HTTPS; Mojang
   devolve `http://`), skin PNG ≤ 64 KiB 64×64/64×32, rosto 8×8 + chapéu (chapéu 100% opaco em
@@ -370,8 +373,11 @@ Plano: `~/.claude/plans/vamos-fazer-um-novo-ticklish-quail.md`. Decisões D54–
 - **Testado:** `sudo make check` passou (2026-11-18; binário 13,8 MB). O 1º run pegou um bug real:
   `List` não derivava `crashed` (lista/Overview mostravam `stopped`) — corrigido.
 - **Verificado de verdade (usuário, 2026-11-18):** crash loop com servidor real funcionou.
-- **Pendente:** deploy systemd + grupo docker (autorização) + `tailscale serve` (conferir `Host` preservado
-  para o WS e conflito na 443); reboot; roteiros reais de Players e modpack.
+- **Pendente:** primeira instalação systemd + grupo docker (autorização) + `tailscale serve` (conferir `Host` preservado
+  para o WS e conflito na 443); reboot; roteiros reais de Players e modpack. Upgrades seguintes: `sudo make deploy` (D70).
+- **2026-11-20/21:** renomeação para Craftkeeper (D69) e script de deploy (D70). `sudo make check` passou com a
+  migração; o container legado foi migrado e funcionou (usuário); compatibilidade removida depois. **Ainda não rodado:**
+  `sudo make check` após a remoção; E2E do deploy (precisa da primeira instalação).
 
 ## Aba Resources — RAM/CPU na página do servidor (2026-11-18)
 
@@ -401,6 +407,13 @@ Plano: `~/.claude/plans/veja-com-da-suporte-glittery-milner.md`.
   conteúdo; `nosniff` só afeta script/style), sem ícone = tile vazio. Header 48 px, lista 32 px
   (uma carga por linha: linhas são atualizadas no lugar). Salvar/remover recarrega o do header.
   Testado: `sudo make check` passou; conferido pelo usuário no navegador (2026-11-18).
+- **Ícone do pack automático** (pedido do usuário, 2026-11-21): depois de extrair o ZIP no
+  `modpack-manager.js`, `adoptPackIcon` (`icon-manager.js`) procura `icon.png` nos diretórios dos
+  scripts e depois na raiz; se não há `server-icon.png` ao lado, recorta/escala para 64×64 e envia
+  como `server-icon.png` **no mesmo diretório** (o jogo lê do diretório de trabalho do launcher,
+  que o wrapper faz `cd`). Nunca sobrescreve. Só frontend. Limitação: o header/aba Properties leem
+  só a raiz, então pack com pasta de topo não mostra o ícone no painel (o jogo mostra).
+  Testado: `node --check`; falta teste no navegador.
 
 ## Players online — Server List Ping (2026-11-18)
 

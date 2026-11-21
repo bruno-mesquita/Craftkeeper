@@ -10,7 +10,7 @@ const LevelDatFile = "level.dat"
 
 // WorldStagingPrefix names the directory an imported world is unpacked into, in the server
 // directory. It is a temporary name: backups skip it and startup removes leftovers.
-const WorldStagingPrefix = ".mesquita-tmp-world-"
+const WorldStagingPrefix = ".craftkeeper-tmp-world-"
 
 // DefaultOpLevel is the permission level the game gives a new operator when
 // server.properties does not set op-permission-level.

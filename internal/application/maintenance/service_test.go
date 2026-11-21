@@ -11,9 +11,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
-	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/filesystem"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/servers"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/filesystem"
 )
 
 const serverID = "SERVERSERVERSERVERSERVER22"
@@ -94,7 +94,7 @@ func (e *env) leftovers(t *testing.T) []string {
 	entries, _ := os.ReadDir(e.dir)
 	var out []string
 	for _, en := range entries {
-		if strings.HasPrefix(en.Name(), ".mesquita-tmp-") {
+		if strings.HasPrefix(en.Name(), ".craftkeeper-tmp-") {
 			out = append(out, en.Name())
 		}
 	}
@@ -180,7 +180,7 @@ func TestChangeVersion(t *testing.T) {
 	}{
 		"running": {func(e *env) { e.srv.status = domain.StatusRunning }, servers.VersionInput{Loader: "vanilla", Version: "1.21.1"}, domain.ErrServerRunning},
 		"busy":    {func(e *env) { e.srv.status = domain.StatusStarting }, servers.VersionInput{Loader: "vanilla", Version: "1.21.1"}, domain.ErrServerBusy},
-		"modpack": {func(e *env) { e.write(t, ".mesquita-modpack", "x") }, servers.VersionInput{Loader: "vanilla", Version: "1.21.1"}, domain.ErrModpackServer},
+		"modpack": {func(e *env) { e.write(t, domain.ModpackConfigFile, "x") }, servers.VersionInput{Loader: "vanilla", Version: "1.21.1"}, domain.ErrModpackServer},
 		"invalid": {func(*env) {}, servers.VersionInput{Loader: "vanilla", Version: "bad"}, domain.ErrInvalidInput},
 	} {
 		e := newEnv(t)

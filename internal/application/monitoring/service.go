@@ -5,8 +5,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/ttlcache"
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/ttlcache"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // Collector samples host metrics.

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // Crash loop policy: a container that its restart policy (unless-stopped) restarts this many

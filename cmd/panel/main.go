@@ -1,4 +1,4 @@
-// Command panel runs the Mesquita Panel server. This is the only composition root:
+// Command panel runs the Craftkeeper server. This is the only composition root:
 // it loads configuration, builds adapters and injects them into the application layer.
 package main
 
@@ -16,33 +16,33 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/activity"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/auth"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/backups"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/console"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/dashboard"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/files"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/installers"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/maintenance"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/mods"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/monitoring"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/players"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
-	"github.com/bruno-mesquita/mesquita-panel/internal/config"
-	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/docker"
-	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/filesystem"
-	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/gameversions"
-	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/hostnet"
-	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/metrics"
-	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/minecraft"
-	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/modrinth"
-	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/mojang"
-	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/password"
-	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/sqlite"
-	httpapi "github.com/bruno-mesquita/mesquita-panel/internal/presentation/http"
-	wspres "github.com/bruno-mesquita/mesquita-panel/internal/presentation/websocket"
-	"github.com/bruno-mesquita/mesquita-panel/migrations"
-	"github.com/bruno-mesquita/mesquita-panel/web"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/activity"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/auth"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/backups"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/console"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/dashboard"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/files"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/installers"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/maintenance"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/mods"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/monitoring"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/players"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/servers"
+	"github.com/bruno-mesquita/Craftkeeper/internal/config"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/docker"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/filesystem"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/gameversions"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/hostnet"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/metrics"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/minecraft"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/modrinth"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/mojang"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/password"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/sqlite"
+	httpapi "github.com/bruno-mesquita/Craftkeeper/internal/presentation/http"
+	wspres "github.com/bruno-mesquita/Craftkeeper/internal/presentation/websocket"
+	"github.com/bruno-mesquita/Craftkeeper/migrations"
+	"github.com/bruno-mesquita/Craftkeeper/web"
 )
 
 const (
@@ -53,7 +53,7 @@ const (
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "mesquita-panel:", err)
+		fmt.Fprintln(os.Stderr, "craftkeeper:", err)
 		os.Exit(1)
 	}
 }

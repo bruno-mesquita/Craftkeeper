@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 const notchHex = "069a79f444e94726a5befca90e38aaf5"

@@ -1,7 +1,7 @@
 // Package docker talks to the Docker Engine API over its Unix socket with plain net/http.
 //
 // Only allowlisted operations are exposed, each as its own method: connectivity checks,
-// listing and statistics of containers labelled mesquita.managed=true (stats.go), and the
+// listing and statistics of containers created by the panel (stats.go), and the
 // game server lifecycle (runtime.go). There is no generic passthrough to the Engine API.
 package docker
 
@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // apiVersion pins the Engine API used for versioned endpoints. 1.44 (Docker Engine 25+)

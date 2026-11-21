@@ -1,13 +1,13 @@
 # Configuration
 
 The panel reads environment variables only. Under systemd they come from
-`/etc/mesquita-panel/config.env` (template: `deployments/config.env.example`).
+`/etc/craftkeeper/config.env` (template: `deployments/config.env.example`).
 Invalid values stop startup with an explanatory error.
 
 | Variable | Default | Description |
 |---|---|---|
 | `LISTEN` | `127.0.0.1:8090` | Comma-separated `host:port` list. Each host must be an explicit IP (an empty host such as `:8090`, which would bind every interface, is rejected). All addresses are bound before serving; if any fails, the process exits. |
-| `DATA_DIR` | `/var/lib/mesquita-panel` | Absolute path. Holds `database.sqlite` (plus WAL files). Must be writable; checked at startup. Disk metrics report this filesystem. |
+| `DATA_DIR` | `/var/lib/craftkeeper` | Absolute path. Holds `database.sqlite` (plus WAL files). Must be writable; checked at startup. Disk metrics report this filesystem. |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Absolute path to the Docker Engine socket. Unreachable Docker is a warning, not a fatal error. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. `debug` logs every HTTP request. |
 | `SECURE_COOKIE` | `false` | `true` or `false`. When `true` the session cookie is always `Secure`; set it when HTTPS is terminated by a proxy on loopback (`tailscale serve`, see `INSTALL.md`). Without it, only requests that reach the panel over TLS get a `Secure` cookie. Forwarding headers are never trusted. |

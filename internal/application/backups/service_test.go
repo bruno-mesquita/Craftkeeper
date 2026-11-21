@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/console"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
-	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/sqlite"
-	"github.com/bruno-mesquita/mesquita-panel/migrations"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/console"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/servers"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/sqlite"
+	"github.com/bruno-mesquita/Craftkeeper/migrations"
 )
 
 const serverID = "SERVERSERVERSERVERSERVER22"

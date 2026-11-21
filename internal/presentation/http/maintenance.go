@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/servers"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // maintenanceDeadline bounds a change made after a full backup of the server (and, for an

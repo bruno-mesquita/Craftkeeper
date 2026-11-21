@@ -9,9 +9,15 @@ import (
 	"unicode/utf8"
 )
 
-// ModpackConfigFile marks a server that runs a modpack's own scripts; its presence in the
-// server directory means the pack, not the panel, owns the version and the mods.
-const ModpackConfigFile = ".mesquita-modpack"
+// Panel-owned marker files at the root of a server directory. ModpackConfigFile holds the
+// selected installer and startup scripts; its presence means the pack, not the panel, owns the
+// version and the mods. ModpackInstalledFile records that the installer completed.
+// ModpackSupportedFile marks a server whose container has the modpack wrapper.
+const (
+	ModpackConfigFile    = ".craftkeeper-modpack"
+	ModpackInstalledFile = ".craftkeeper-modpack-installed"
+	ModpackSupportedFile = ".craftkeeper-modpack-supported"
+)
 
 // ModsDir is the directory, relative to the server root, the mod loaders read mods from.
 const ModsDir = "mods"

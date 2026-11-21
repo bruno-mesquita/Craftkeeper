@@ -9,7 +9,7 @@ unless marked *planned*.
 
 - Timestamps: RFC 3339, UTC (`2026-11-17T12:00:00Z`). IDs: opaque strings.
 - Request bodies: a single JSON object, max 64 KiB, unknown fields rejected.
-- Authentication: `mesquita_session` cookie (`HttpOnly`, `SameSite=Strict`, `Secure` under TLS),
+- Authentication: `craftkeeper_session` cookie (`HttpOnly`, `SameSite=Strict`, `Secure` under TLS),
   set by login.
 - CSRF: every authenticated non-GET request must send `X-CSRF-Token: <csrf_token>` (returned by
   login and `/auth/me`). In addition, all cross-origin state-changing requests are rejected
@@ -102,25 +102,25 @@ Cached for 2 s. Network totals exclude `lo`, `veth*`, `docker*`, `br-*`, `virbr*
   "collected_at": "2026-11-17T12:00:00.123Z",
   "cpu": { "cores": 12, "usage_percent": 7.5 },
   "memory": { "total_bytes": 0, "used_bytes": 0, "available_bytes": 0 },
-  "disk": { "path": "/var/lib/mesquita-panel", "total_bytes": 0, "used_bytes": 0, "free_bytes": 0 },
+  "disk": { "path": "/var/lib/craftkeeper", "total_bytes": 0, "used_bytes": 0, "free_bytes": 0 },
   "network": { "rx_bytes": 0, "tx_bytes": 0, "rx_bytes_per_second": 0, "tx_bytes_per_second": 0 }
 }
 ```
 
 ### `GET /system/containers` — auth
-Metrics of containers labelled `mesquita.managed=true` only (other containers on the host are
+Metrics of containers labelled `craftkeeper.managed=true` only (other containers on the host are
 never listed). Cached for 2 s. Containers that are not running are listed with zero metrics.
 `cpu_percent` uses 100 per core (a container using two full cores reports 200). CPU and network
 rates are computed between samples, so the first sample of a container reports 0.
 `memory.used_bytes` excludes reclaimable page cache, like `docker stats`.
-`server_id` is the `mesquita.server_id` label (empty string when absent).
+`server_id` is the `craftkeeper.server_id` label (empty string when absent).
 `containers` is always an array (empty when there are none).
 ```json
 {
   "collected_at": "2026-11-17T12:00:00.123Z",
   "containers": [
     {
-      "id": "64-char hex", "name": "mesquita-srv-1", "server_id": "1", "state": "running",
+      "id": "64-char hex", "name": "craftkeeper-srv-1", "server_id": "1", "state": "running",
       "cpu_percent": 12.5,
       "memory": { "used_bytes": 0, "limit_bytes": 0 },
       "network": { "rx_bytes": 0, "tx_bytes": 0, "rx_bytes_per_second": 0, "tx_bytes_per_second": 0 },
@@ -132,8 +132,8 @@ rates are computed between samples, so the first sample of a container reports 0
 Errors: `503 docker_unavailable` when the Docker daemon cannot be reached.
 
 ### `DELETE /system/containers/{id}` — auth + CSRF
-Stops and force-removes an orphan container: labelled `mesquita.managed=true` whose
-`mesquita.server_id` has no server record. Bind-mounted files are kept. A container of a
+Stops and force-removes an orphan container: labelled `craftkeeper.managed=true` whose
+`craftkeeper.server_id` has no server record. Bind-mounted files are kept. A container of a
 registered server is refused (`409 container_not_managed`; use `DELETE /servers/{id}`).
 `204` · `404` (not a managed container) · `409` · `502` · `503`.
 
@@ -178,15 +178,15 @@ server). `server_name` is the server's **current** name, `null` once it is delet
 Audit actions: `auth.setup`, `auth.login`, `auth.logout`, `auth.password_change`,
 `server.create`, `server.update`, `server.start`, `server.stop`, `server.restart`,
 `server.kill`, `server.delete` (target: server name), `server.crash_loop` (no user; see
-Servers), `server.version_change`, `world.reset`, `world.import` (see World), `server.console_command` (target: the command typed in the console, at most 200
+Servers), `server.version_change`, `server.migrate` (historical: containers recreated once after the rename to Craftkeeper), `world.reset`, `world.import` (see World), `server.console_command` (target: the command typed in the console, at most 200
 bytes; commands the panel sends itself for backups and player lists are not recorded as
 console commands), `container.delete`, `modpack.*`, `file.*`, `backup.*`, `whitelist.*`,
 `player.*`, `ip.*` (see their sections).
 
 ## Servers
 
-Game servers run in Docker containers labelled `mesquita.managed=true` and
-`mesquita.server_id=<id>`. Before acting on a container the panel checks both labels against
+Game servers run in Docker containers labelled `craftkeeper.managed=true` and
+`craftkeeper.server_id=<id>`. Before acting on a container the panel checks both labels against
 its database; other containers on the host are never listed or touched.
 
 **Server**
@@ -375,9 +375,14 @@ default). The panel discovers regular `.sh` files inside the server directory; s
 not followed. Create the server with the modpack's exact Minecraft version first because that
 version selects the Java image used to run its scripts.
 
+After extraction the web client looks for an `icon.png` in the scripts' directories, then the
+root, and when no `server-icon.png` sits next to it, uploads a 64×64 PNG made from it as
+`server-icon.png` in that directory (client only, through the same upload endpoint).
+
 `GET /servers/{id}/modpack` returns `{ "supported", "scripts", "install_script", "start_script", "installed" }`.
 `PUT /servers/{id}/modpack` accepts `{ "install_script", "start_script" }`; both paths must
-refer to discovered shell scripts and the server must be stopped. The chosen paths are stored
+refer to discovered shell scripts and the server must be stopped. They may be the same script
+(packs whose single script both installs and starts the server); it then runs once per start. The chosen paths are stored
 as server metadata inside the data directory and included in backups.
 
 `POST /servers/{id}/modpack/install` starts the managed container. On its first start it runs

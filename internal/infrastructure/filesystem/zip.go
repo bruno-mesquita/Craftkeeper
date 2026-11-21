@@ -12,7 +12,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // WriteZip streams directory dir as a zip archive to w, entries prefixed with the
@@ -58,7 +58,7 @@ func writeZip(fsys fs.FS, dir, prefix string, w io.Writer, fast bool) error {
 		switch {
 		case entry == "":
 			return nil // the root itself, without a prefix
-		case d.Name() == ".mesquita-modpack-supported":
+		case d.Name() == domain.ModpackSupportedFile:
 			return nil // container capability belongs to the runtime, not a portable backup
 		case strings.HasPrefix(d.Name(), tempPrefix):
 			return nil

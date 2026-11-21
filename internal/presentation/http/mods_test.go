@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/modrinth"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/modrinth"
 )
 
 // fakeModrinth serves the parts of the Modrinth API and CDN the panel uses.

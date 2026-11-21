@@ -1,4 +1,4 @@
-module github.com/bruno-mesquita/mesquita-panel
+module github.com/bruno-mesquita/Craftkeeper
 
 go 1.27
 

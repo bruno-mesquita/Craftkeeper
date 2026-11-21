@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // URLs are the API base (".../v2") and the prefix every file and icon URL must start with.
@@ -34,7 +34,7 @@ var Official = URLs{
 }
 
 // userAgent identifies the panel, as Modrinth asks of API clients.
-const userAgent = "mesquita-panel"
+const userAgent = "craftkeeper"
 
 const (
 	fetchTimeout = 15 * time.Second

@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"unicode/utf8"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 const (
@@ -24,7 +24,7 @@ const (
 )
 
 const (
-	tempPrefix   = ".mesquita-tmp-" // in-progress uploads and edits
+	tempPrefix   = ".craftkeeper-tmp-" // in-progress uploads and edits
 	readDirBatch = 256
 )
 
@@ -117,7 +117,7 @@ func (s *ServerFiles) List(id, dir string) (domain.FileListing, error) {
 
 func isModpackMetadata(name string) bool {
 	switch name {
-	case ".mesquita-modpack", ".mesquita-modpack-installed", ".mesquita-modpack-supported":
+	case domain.ModpackConfigFile, domain.ModpackInstalledFile, domain.ModpackSupportedFile:
 		return true
 	default:
 		return false

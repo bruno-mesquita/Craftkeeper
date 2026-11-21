@@ -30,6 +30,9 @@ const (
 
 	// AuditServerVersionChange targets "<server name>: <old version> → <new version>".
 	AuditServerVersionChange = "server.version_change"
+	// AuditServerMigrate is no longer recorded: it marks the one-time recreation of containers
+	// created before the rename to Craftkeeper (D69). Kept so those audit rows stay filterable.
+	AuditServerMigrate = "server.migrate"
 	// World actions target "<server name>: <world directory>".
 	AuditWorldReset  = "world.reset"
 	AuditWorldImport = "world.import"
@@ -72,7 +75,7 @@ const (
 var AuditActions = []string{
 	AuditSetupCompleted, AuditLogin, AuditLogout, AuditPasswordChanged,
 	AuditServerCreate, AuditServerUpdate, AuditServerStart, AuditServerStop, AuditServerRestart,
-	AuditServerKill, AuditServerDelete, AuditServerCrashLoop, AuditServerVersionChange, AuditConsoleCommand,
+	AuditServerKill, AuditServerDelete, AuditServerCrashLoop, AuditServerVersionChange, AuditServerMigrate, AuditConsoleCommand,
 	AuditWorldReset, AuditWorldImport,
 	AuditContainerDelete, AuditModpackConfigure, AuditModpackInstall,
 	AuditFileUpload, AuditFileWrite, AuditFileMkdir, AuditFileRename, AuditFileDelete, AuditFileExtract,

@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/auth"
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/auth"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 const (
-	sessionCookie = "mesquita_session"
+	sessionCookie = "craftkeeper_session"
 	csrfHeader    = "X-CSRF-Token"
 )
 

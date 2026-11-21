@@ -31,7 +31,7 @@ func (r PortRange) Contains(port int) bool { return port >= r.First && port <= r
 
 const (
 	defaultListen       = "127.0.0.1:8090"
-	defaultDataDir      = "/var/lib/mesquita-panel"
+	defaultDataDir      = "/var/lib/craftkeeper"
 	defaultDockerSocket = "/var/run/docker.sock"
 	// Crafty already uses 25500–25600 on mesquita-server.
 	defaultGamePorts = "25601-25700"

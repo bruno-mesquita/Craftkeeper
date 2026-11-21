@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // consoleDaemon fakes inspect, logs, attach and events. Unknown paths answer 404.
@@ -198,7 +198,7 @@ func TestSendInputRequiresUpgrade(t *testing.T) {
 
 func TestEventsKeepsOnlyManagedContainers(t *testing.T) {
 	_, c, d := newConsoleDaemon(t)
-	managed := `"Attributes":{"mesquita.managed":"true","mesquita.server_id":"` + serverID + `"}`
+	managed := `"Attributes":{"craftkeeper.managed":"true","craftkeeper.server_id":"` + serverID + `"}`
 	d.events = strings.Join([]string{
 		`{"Type":"container","Action":"start","Actor":{"ID":"` + idRunning + `",` + managed + `}}`,
 		`not json`,
@@ -262,7 +262,7 @@ func TestFollowLogsEmitsUntilStop(t *testing.T) {
 
 func TestWatchEventsEndIsAnError(t *testing.T) {
 	_, c, d := newConsoleDaemon(t)
-	d.events = `{"Type":"container","Action":"stop","Actor":{"ID":"` + idRunning + `","Attributes":{"mesquita.managed":"true"}}}` + "\n"
+	d.events = `{"Type":"container","Action":"stop","Actor":{"ID":"` + idRunning + `","Attributes":{"craftkeeper.managed":"true"}}}` + "\n"
 	var n int
 	err := c.WatchEvents(context.Background(), func(domain.ContainerEvent) { n++ })
 	if n != 1 || !errors.Is(err, domain.ErrDockerUnavailable) {

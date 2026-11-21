@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 const deletedDir = ".deleted"
@@ -49,7 +49,7 @@ func (d *ServerDirs) Create(id string) (string, error) {
 		os.Remove(path)
 		return "", fmt.Errorf("filesystem: %w", err)
 	}
-	marker := filepath.Join(path, ".mesquita-modpack-supported")
+	marker := filepath.Join(path, domain.ModpackSupportedFile)
 	f, err := os.OpenFile(marker, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o640)
 	if err != nil {
 		os.RemoveAll(path)

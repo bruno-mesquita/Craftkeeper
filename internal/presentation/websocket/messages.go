@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/console"
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/console"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // ProtocolVersion is the only message version this server speaks.

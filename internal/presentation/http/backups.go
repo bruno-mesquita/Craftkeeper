@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // restoreDeadline bounds a restore: extracting a whole world.

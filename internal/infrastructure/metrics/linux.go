@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // firstSampleGap is how long the very first Collect waits to compute rates.

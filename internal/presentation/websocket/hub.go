@@ -13,11 +13,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/auth"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/console"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
-	wsconn "github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/websocket"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/auth"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/console"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/servers"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
+	wsconn "github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/websocket"
 )
 
 // Fixed limits (docs/WEBSOCKET.md).

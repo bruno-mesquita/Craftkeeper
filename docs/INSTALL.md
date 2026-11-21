@@ -6,7 +6,7 @@ Every step runs with `sudo` and must not touch Crafty, its containers, networks 
 ## 0. Build (development side)
 
 ```bash
-make build          # -> bin/mesquita-panel (linux/amd64, static, CGO disabled)
+make build          # -> bin/craftkeeper (linux/amd64, static, CGO disabled)
 ```
 
 ## 1. Check the architecture
@@ -26,11 +26,11 @@ and server management is unavailable.
 
 **Server management needs Docker access.** The service user must be in the `docker` group,
 which is root-equivalent: anyone controlling the panel process controls the host. The panel
-only acts on containers labelled `mesquita.managed=true` with a server ID it knows, but only
+only acts on containers labelled `craftkeeper.managed=true` with a server ID it knows, but only
 grant this deliberately:
 
 ```bash
-sudo usermod -aG docker mesquita-panel
+sudo usermod -aG docker craftkeeper
 # and uncomment SupplementaryGroups=docker in the unit (step 7)
 ```
 
@@ -51,25 +51,25 @@ If 8090 is taken, choose another free port and use it in step 6.
 ## 4. Create the service user and directories
 
 ```bash
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin mesquita-panel
-sudo install -d -m 0755 /opt/mesquita-panel
-sudo install -d -m 0750 -o root -g mesquita-panel /etc/mesquita-panel
-# /var/lib/mesquita-panel is created by systemd (StateDirectory=).
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin craftkeeper
+sudo install -d -m 0755 /opt/craftkeeper
+sudo install -d -m 0750 -o root -g craftkeeper /etc/craftkeeper
+# /var/lib/craftkeeper is created by systemd (StateDirectory=).
 ```
 
 ## 5. Install the binary
 
 ```bash
-sudo install -m 0755 bin/mesquita-panel /opt/mesquita-panel/mesquita-panel
+sudo install -m 0755 bin/craftkeeper /opt/craftkeeper/craftkeeper
 ```
 
-(From another machine: `scp bin/mesquita-panel mesquita-server:/tmp/` first.)
+(From another machine: `scp bin/craftkeeper mesquita-server:/tmp/` first.)
 
 ## 6. Configure
 
 ```bash
-sudo install -m 0640 -o root -g mesquita-panel deployments/config.env.example /etc/mesquita-panel/config.env
-sudoedit /etc/mesquita-panel/config.env
+sudo install -m 0640 -o root -g craftkeeper deployments/config.env.example /etc/craftkeeper/config.env
+sudoedit /etc/craftkeeper/config.env
 ```
 
 See `CONFIGURATION.md`. Keep the panel on `127.0.0.1` and the Tailscale IP only.
@@ -77,15 +77,15 @@ See `CONFIGURATION.md`. Keep the panel on `127.0.0.1` and the Tailscale IP only.
 ## 7. Install the systemd unit
 
 ```bash
-sudo install -m 0644 deployments/systemd/mesquita-panel.service /etc/systemd/system/
+sudo install -m 0644 deployments/systemd/craftkeeper.service /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
 
 ## 8. Start
 
 ```bash
-sudo systemctl enable --now mesquita-panel
-systemctl status mesquita-panel
+sudo systemctl enable --now craftkeeper
+systemctl status craftkeeper
 curl -s http://127.0.0.1:8090/api/v1/health     # {"status":"ok"}
 ```
 
@@ -113,7 +113,7 @@ per-IP login limit.
 ## 9. Logs
 
 ```bash
-journalctl -u mesquita-panel -f
+journalctl -u craftkeeper -f
 ```
 
 ## 10. Initial administrator setup
@@ -121,7 +121,7 @@ journalctl -u mesquita-panel -f
 While no administrator exists, every start logs a **one-time setup token**:
 
 ```bash
-journalctl -u mesquita-panel | grep setup_token
+journalctl -u craftkeeper | grep setup_token
 ```
 
 Open `https://<machine>.<tailnet>.ts.net` (with `tailscale serve`), `http://100.126.54.17:8090`
@@ -131,23 +131,44 @@ After that the setup endpoint is permanently closed. There is no default passwor
 
 ## Upgrade
 
+From the repository on the server, in a real terminal:
+
 ```bash
-sudo install -m 0755 bin/mesquita-panel /opt/mesquita-panel/mesquita-panel
-sudo systemctl restart mesquita-panel
+sudo make deploy            # output also in .cache/deploy.log
 ```
 
-Migrations run automatically at startup. Back up first:
-`sudo sqlite3 /var/lib/mesquita-panel/database.sqlite ".backup /root/panel-$(date +%F).sqlite"`
-(or stop the service and copy the directory).
+`deployments/deploy.sh` only upgrades an existing installation (steps 1–8 above) and stops
+before changing anything if the service or binary is missing or `make check` fails. Then it:
+
+1. stops the service (game server containers keep running);
+2. copies `database.sqlite` (+ WAL files) and the current binary to
+   `/var/backups/craftkeeper/<UTC time>-<git rev>/` (mode 0700; the newest 5 are kept);
+3. installs `bin/craftkeeper`, starts the service and polls `/api/v1/health` for 30 s;
+4. if the service does not come up, restores **both** the previous binary and the database
+   (migrations only move forward, so the old binary needs the old schema), starts it again and
+   prints the last 50 journal lines.
+
+`sudo make deploy SKIP_BUILD=1` installs the binary already in `bin/` (after `sudo make check`);
+`HEALTH_URL=...` (same way) overrides the health endpoint when the panel does not listen on `127.0.0.1:8090`.
+
+To go back to an older backup by hand:
+
+```bash
+sudo systemctl stop craftkeeper
+sudo install -m 0755 /var/backups/craftkeeper/<dir>/craftkeeper /opt/craftkeeper/craftkeeper
+sudo rm -f /var/lib/craftkeeper/database.sqlite-wal /var/lib/craftkeeper/database.sqlite-shm
+sudo cp -p /var/backups/craftkeeper/<dir>/database.sqlite* /var/lib/craftkeeper/
+sudo systemctl start craftkeeper
+```
 
 ## Uninstall
 
 ```bash
-sudo systemctl disable --now mesquita-panel
-sudo rm /etc/systemd/system/mesquita-panel.service && sudo systemctl daemon-reload
-sudo rm -r /opt/mesquita-panel /etc/mesquita-panel   # /var/lib/mesquita-panel holds data: remove deliberately
+sudo systemctl disable --now craftkeeper
+sudo rm /etc/systemd/system/craftkeeper.service && sudo systemctl daemon-reload
+sudo rm -r /opt/craftkeeper /etc/craftkeeper   # /var/lib/craftkeeper holds data: remove deliberately
 # Game server containers keep running (restart policy unless-stopped). List them before deciding:
-sudo docker ps -a --filter label=mesquita.managed=true
+sudo docker ps -a --filter label=craftkeeper.managed=true
 ```
 
 ## Verify Crafty is untouched

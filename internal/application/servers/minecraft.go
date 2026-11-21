@@ -3,7 +3,7 @@ package servers
 import (
 	"strings"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // loaderVersionEnv names the variable that pins each loader's build in the game image.

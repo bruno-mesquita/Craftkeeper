@@ -1,6 +1,7 @@
 // Import a server pack, choose its scripts, then start its one-time installer.
 import { api, upload } from './api.js';
 import { field, h, toast } from './dom.js';
+import { adoptPackIcon } from './icon-manager.js';
 
 export function mountModpackManager(root, { id, onInstall, initialFile }) {
   const status = h('p', { class: 'text-sm text-muted', role: 'status' });
@@ -69,11 +70,23 @@ export function mountModpackManager(root, { id, onInstall, initialFile }) {
       status.textContent = 'Extracting ZIP…';
       await api('POST', `/servers/${id}/files/extract`, { path: pack.name, destination: '', overwrite: false });
       await refresh();
+      await useIcon();
     } catch (err) {
       status.textContent = `Modpack import failed: ${err.message}`;
     } finally {
       importButton.disabled = false;
       progress.hidden = true;
+    }
+  }
+
+  // The pack's icon.png becomes the server list icon. It sits in the pack's root, which is where
+  // its scripts are; a failure here only costs the icon.
+  async function useIcon() {
+    const dirs = (lastInfo?.scripts ?? []).map((s) => (s.includes('/') ? s.slice(0, s.lastIndexOf('/')) : ''));
+    try {
+      if (await adoptPackIcon(id, [...dirs, ''])) toast('Server icon set from the pack’s icon.png.', 'success');
+    } catch (err) {
+      toast(`Could not use the pack’s icon: ${err.message}`, 'error');
     }
   }
 

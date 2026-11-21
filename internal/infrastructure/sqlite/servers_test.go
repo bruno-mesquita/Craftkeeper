@@ -9,8 +9,8 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
-	"github.com/bruno-mesquita/mesquita-panel/migrations"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/migrations"
 )
 
 func TestServersRepository(t *testing.T) {

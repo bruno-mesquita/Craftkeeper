@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/servers"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // Files reads and writes text files of a server's directory (filesystem.ServerFiles).
@@ -201,7 +201,7 @@ func (s *Service) Ban(ctx context.Context, id, name, reason string, actor server
 		return editList(s, id, domain.BannedPlayersFile, func(l []domain.PlayerBan) []domain.PlayerBan {
 			l = without(l, func(b domain.PlayerBan) bool { return strings.EqualFold(b.Name, name) || b.UUID == player.UUID })
 			return append(l, domain.PlayerBan{UUID: player.UUID, Name: player.Name, Created: domain.BanTimestamp(s.now()),
-				Source: "Mesquita Panel", Expires: "forever", Reason: banReason(reason)})
+				Source: "Craftkeeper", Expires: "forever", Reason: banReason(reason)})
 		})
 	})
 }
@@ -229,7 +229,7 @@ func (s *Service) BanIP(ctx context.Context, id, ip, reason string, actor server
 		return editList(s, id, domain.BannedIPsFile, func(l []domain.IPBan) []domain.IPBan {
 			l = without(l, func(b domain.IPBan) bool { return b.IP == ip })
 			return append(l, domain.IPBan{IP: ip, Created: domain.BanTimestamp(s.now()),
-				Source: "Mesquita Panel", Expires: "forever", Reason: banReason(reason)})
+				Source: "Craftkeeper", Expires: "forever", Reason: banReason(reason)})
 		})
 	})
 }

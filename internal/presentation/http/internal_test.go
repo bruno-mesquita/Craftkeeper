@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // The session cookie is Secure under TLS, or always when the panel is configured to sit

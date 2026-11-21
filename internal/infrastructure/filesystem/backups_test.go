@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 const backupID = "BACKUPBACKUPBACKUPBACKUP22"
@@ -204,6 +204,7 @@ func TestBackupCleanupStale(t *testing.T) {
 	}
 	write(t, filepath.Join(serversRoot, restorePrefix+id+"-STALE", "level.dat"), "x")
 	write(t, filepath.Join(b.root, id, tempPrefix+"STALE"), "partial")
+	write(t, filepath.Join(dir, domain.WorldStagingPrefix+"STALE", "level.dat"), "x")
 
 	if err := b.CleanupStale(); err != nil {
 		t.Fatal(err)
@@ -212,6 +213,7 @@ func TestBackupCleanupStale(t *testing.T) {
 		t.Fatalf("stale staging directory: %v", err)
 	}
 	noTempFiles(t, b.root)
+	noTempFiles(t, dir)
 	if _, _, err := b.Open(id, backupID); err != nil {
 		t.Fatalf("finished backups must survive cleanup: %v", err)
 	}

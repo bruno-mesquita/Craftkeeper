@@ -10,7 +10,7 @@ const GROUPS = [
   ['Server', {
     'server.create': 'Server created', 'server.update': 'Server edited', 'server.start': 'Start', 'server.stop': 'Stop',
     'server.restart': 'Restart', 'server.kill': 'Kill', 'server.delete': 'Server deleted', 'server.crash_loop': 'Stopped after crashes',
-    'server.version_change': 'Version changed', 'container.delete': 'Orphan container removed',
+    'server.version_change': 'Version changed', 'server.migrate': 'Container migrated', 'container.delete': 'Orphan container removed',
   }],
   ['Console', { 'server.console_command': 'Console command' }],
   ['World', { 'world.reset': 'World reset', 'world.import': 'World imported' }],

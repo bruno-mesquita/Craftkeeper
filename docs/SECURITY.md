@@ -48,8 +48,8 @@ numbers (`Dnn`) refer to [`../MEMORY.md`](../MEMORY.md).
 
 - Engine API through a small allowlist of endpoints; no SDK, no `exec`, no arbitrary commands
   (D5). Console input is written to the game's stdin (D25).
-- Before acting on a container the panel inspects it and requires `mesquita.managed=true`
-  **and** a `mesquita.server_id` that matches the database (D22). Metrics and lists are
+- Before acting on a container the panel inspects it and requires `craftkeeper.managed=true`
+  **and** a `craftkeeper.server_id` that matches the database (D22). Metrics and lists are
   filtered by label in the daemon and checked again in the client (D17).
 - A container that disappeared or changed labels is only forgotten, never touched (D23).
 - Game containers: run as the panel's uid:gid (never root), `CapDrop ALL`, `no-new-privileges`,
@@ -86,10 +86,10 @@ game container with its restrictions (D21); the panel cannot vouch for them (D64
 
 ## Service hardening
 
-The systemd unit runs as a dedicated `mesquita-panel` user with `NoNewPrivileges`,
+The systemd unit runs as a dedicated `craftkeeper` user with `NoNewPrivileges`,
 `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, `PrivateDevices`, no capabilities,
 `MemoryDenyWriteExecute`, a `@system-service` syscall filter, restricted address families and
-`UMask=0027`. Data lives in `StateDirectory=/var/lib/mesquita-panel` (mode 0750). See
+`UMask=0027`. Data lives in `StateDirectory=/var/lib/craftkeeper` (mode 0750). See
 [`INSTALL.md`](INSTALL.md).
 
 ## Audit

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // Reduced copies of the real responses (shapes checked on 2026-11-17).

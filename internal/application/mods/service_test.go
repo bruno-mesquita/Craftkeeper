@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
-	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/filesystem"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/servers"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/filesystem"
 )
 
 const serverID = "SERVERSERVERSERVERSERVER22"

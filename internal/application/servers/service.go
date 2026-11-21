@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 type Config struct {
@@ -228,7 +228,7 @@ func (s *Service) checkBuilt(x domain.Server) error {
 	replacing := s.replacing[x.ID]
 	s.jobsMu.Unlock()
 	if replacing {
-		return fmt.Errorf("%w: the server's version is being changed", domain.ErrServerBusy)
+		return fmt.Errorf("%w: the server's container is being replaced", domain.ErrServerBusy)
 	}
 	v, ok := s.pending(x)
 	switch {
@@ -524,7 +524,7 @@ func (s *Service) Delete(ctx context.Context, id string, deleteFiles bool, actor
 	replacing := s.replacing[x.ID]
 	s.jobsMu.Unlock()
 	if replacing {
-		return fmt.Errorf("%w: the server's version is being changed", domain.ErrServerBusy)
+		return fmt.Errorf("%w: the server's container is being replaced", domain.ErrServerBusy)
 	}
 	err = s.deleteContainer(ctx, x)
 	if err == nil {

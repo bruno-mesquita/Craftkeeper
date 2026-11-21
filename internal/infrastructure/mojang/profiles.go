@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // URLs are the endpoint prefixes; a name, UUID or texture hash is appended.
@@ -40,7 +40,7 @@ const (
 	fetchTimeout = 15 * time.Second
 	maxJSON      = 16 << 10
 	maxSkin      = 64 << 10
-	userAgent    = "mesquita-panel"
+	userAgent    = "craftkeeper"
 	textureHost  = "textures.minecraft.net"
 )
 

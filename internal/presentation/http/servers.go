@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/servers"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // Deadline for requests that wait on a graceful game stop, longer than the server-wide

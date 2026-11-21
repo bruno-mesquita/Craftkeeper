@@ -1,24 +1,24 @@
 [Unit]
-Description=Mesquita Panel (game server management)
-Documentation=file:///opt/mesquita-panel/INSTALL.md
+Description=Craftkeeper (game server management)
+Documentation=file:///opt/craftkeeper/INSTALL.md
 # The Tailscale address must exist before binding to it.
 After=network-online.target tailscaled.service docker.service
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=mesquita-panel
-Group=mesquita-panel
+User=craftkeeper
+Group=craftkeeper
 # Phase 3+ (container management) needs the docker group, which is root-equivalent.
 # Uncomment only after it has been explicitly authorized:
 #SupplementaryGroups=docker
-EnvironmentFile=/etc/mesquita-panel/config.env
-ExecStart=/opt/mesquita-panel/mesquita-panel
+EnvironmentFile=/etc/craftkeeper/config.env
+ExecStart=/opt/craftkeeper/craftkeeper
 Restart=on-failure
 RestartSec=5s
 
-# /var/lib/mesquita-panel, created and owned by the service user.
-StateDirectory=mesquita-panel
+# /var/lib/craftkeeper, created and owned by the service user.
+StateDirectory=craftkeeper
 StateDirectoryMode=0750
 
 # Hardening

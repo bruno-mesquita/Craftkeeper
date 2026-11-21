@@ -28,7 +28,7 @@ GO_RUN = $(DOCKER) run --rm \
 	-e CGO_ENABLED=0 -e GOOS=linux -e GOARCH=amd64 \
 	$(GO_IMAGE)
 
-.PHONY: check build test vet fmt tidy css run clean
+.PHONY: check build test vet fmt tidy css run deploy clean
 
 # Only our sources: never scan the module cache in .cache/.
 GO_DIRS := cmd internal migrations web
@@ -36,10 +36,10 @@ GO_DIRS := cmd internal migrations web
 # Everything CI would run: formatting, vet, tests, build. Fails if gofmt reports files.
 check: | .cache
 	$(GO_RUN) sh -c 'set -e; f=$$(gofmt -l $(GO_DIRS)); if [ -n "$$f" ]; then echo "gofmt needed:"; echo "$$f"; exit 1; fi; \
-		go vet ./... && go test ./... && go build -trimpath -ldflags="-s -w" -o bin/mesquita-panel ./cmd/panel' 2>&1 | tee $(LOG)
+		go vet ./... && go test ./... && go build -trimpath -ldflags="-s -w" -o bin/craftkeeper ./cmd/panel' 2>&1 | tee $(LOG)
 
 build: | .cache
-	$(GO_RUN) go build -trimpath -ldflags="-s -w" -o bin/mesquita-panel ./cmd/panel 2>&1 | tee $(LOG)
+	$(GO_RUN) go build -trimpath -ldflags="-s -w" -o bin/craftkeeper ./cmd/panel 2>&1 | tee $(LOG)
 
 test: | .cache
 	$(GO_RUN) go test ./... 2>&1 | tee $(LOG)
@@ -71,7 +71,12 @@ $(TAILWIND_BIN):
 # Listens on loopback and the Tailscale IP (see MEMORY.md). Override: make run RUN_LISTEN=127.0.0.1:8090
 RUN_LISTEN ?= 127.0.0.1:8090,100.126.54.17:8090
 run:
-	DATA_DIR=$(CURDIR)/.data LISTEN=$(RUN_LISTEN) LOG_LEVEL=debug ./bin/mesquita-panel
+	DATA_DIR=$(CURDIR)/.data LISTEN=$(RUN_LISTEN) LOG_LEVEL=debug ./bin/craftkeeper
+
+# Upgrades the installed service: check, back up, install, restart, health check, rollback.
+# Root only (sudo make deploy); first installation is manual (docs/INSTALL.md).
+deploy: | .cache
+	./deployments/deploy.sh 2>&1 | tee .cache/deploy.log
 
 clean:
 	rm -rf bin .data

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/bruno-mesquita/mesquita-panel/migrations"
+	"github.com/bruno-mesquita/Craftkeeper/migrations"
 )
 
 func TestMigrationsApplyFromScratchAndAreIdempotent(t *testing.T) {

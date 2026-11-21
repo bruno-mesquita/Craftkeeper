@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/servers"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // Files reaches the contents of server directories (filesystem.ServerFiles). Paths are
@@ -250,10 +250,10 @@ func (s *Service) ModpackInfo(ctx context.Context, id string) (Modpack, error) {
 		return Modpack{}, err
 	}
 	info := Modpack{Scripts: scripts}
-	e, err := s.files.Stat(id, ".mesquita-modpack-supported")
-	if err == nil && e.Type == domain.FileTypeFile {
-		info.Supported = true
-	} else if err != nil && !errors.Is(err, domain.ErrNotFound) {
+	if info.Supported, err = s.hasFile(id, domain.ModpackSupportedFile); err != nil {
+		return Modpack{}, err
+	}
+	if info.Installed, err = s.hasFile(id, domain.ModpackInstalledFile); err != nil {
 		return Modpack{}, err
 	}
 	f, _, err := s.files.OpenFile(id, domain.ModpackConfigFile)
@@ -270,17 +270,21 @@ func (s *Service) ModpackInfo(ctx context.Context, id string) (Modpack, error) {
 	} else if err != nil && !errors.Is(err, domain.ErrNotFound) {
 		return Modpack{}, err
 	}
-	e, err = s.files.Stat(id, ".mesquita-modpack-installed")
-	if err == nil && e.Type == domain.FileTypeFile {
-		info.Installed = true
-	} else if err != nil && !errors.Is(err, domain.ErrNotFound) {
-		return Modpack{}, err
-	}
 	return info, nil
 }
 
+// hasFile reports whether the server directory holds p as a regular file.
+func (s *Service) hasFile(id, p string) (bool, error) {
+	e, err := s.files.Stat(id, p)
+	if errors.Is(err, domain.ErrNotFound) {
+		return false, nil
+	}
+	return err == nil && e.Type == domain.FileTypeFile, err
+}
+
 // ConfigureModpack persists the user's explicit script selection after confirming both
-// paths came from regular shell scripts inside the server directory.
+// paths came from regular shell scripts inside the server directory. Both may name the same
+// script; the container wrapper then runs it once per start instead of twice.
 func (s *Service) ConfigureModpack(ctx context.Context, id, install, start string, actor servers.Actor) error {
 	cleanInstall, err := clean("install_script", install, true)
 	if err != nil {
@@ -292,9 +296,6 @@ func (s *Service) ConfigureModpack(ctx context.Context, id, install, start strin
 	}
 	if !strings.EqualFold(filepath.Ext(cleanInstall), ".sh") || !strings.EqualFold(filepath.Ext(cleanStart), ".sh") {
 		return &domain.ValidationError{Field: "scripts", Message: "installer and startup must be .sh files"}
-	}
-	if cleanInstall == cleanStart {
-		return &domain.ValidationError{Field: "scripts", Message: "installer and startup scripts must be different"}
 	}
 	srv, err := s.servers.Get(ctx, id)
 	if err != nil {
@@ -315,7 +316,7 @@ func (s *Service) ConfigureModpack(ctx context.Context, id, install, start strin
 	}
 	_, err = s.files.WriteText(id, domain.ModpackConfigFile, cleanInstall+"\n"+cleanStart+"\n", "")
 	if err == nil && modpack.Installed && modpack.InstallScript != cleanInstall {
-		if removeErr := s.files.Remove(id, ".mesquita-modpack-installed"); removeErr != nil && !errors.Is(removeErr, domain.ErrNotFound) {
+		if removeErr := s.files.Remove(id, domain.ModpackInstalledFile); removeErr != nil && !errors.Is(removeErr, domain.ErrNotFound) {
 			err = removeErr
 		}
 	}

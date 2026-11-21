@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/activity"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/auth"
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/activity"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/auth"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // --- response DTOs: the public JSON contract (docs/API.md) ---

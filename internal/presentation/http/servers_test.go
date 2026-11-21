@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // stubRuntime is an in-memory container runtime. Docker itself is covered by the adapter's

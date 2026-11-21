@@ -3,7 +3,7 @@ package httpapi
 import (
 	"net/http"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/servers"
 )
 
 // playerBody is the JSON body of the player list mutations; each endpoint reads the field it needs.

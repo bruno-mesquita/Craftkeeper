@@ -8,7 +8,7 @@ export function mount(root, { onDone }) {
   const form = h('form', { class: 'flex flex-col gap-4', novalidate: true },
     h('p', { class: 'text-muted' },
       'Find the setup token in the service log: ',
-      h('code', { class: 'font-mono text-foreground' }, 'journalctl -u mesquita-panel')),
+      h('code', { class: 'font-mono text-foreground' }, 'journalctl -u craftkeeper')),
     field('Setup token', h('input', { class: 'input font-mono', name: 'token', required: true, autocomplete: 'off', spellcheck: 'false' })),
     field('Username', h('input', { class: 'input', name: 'username', required: true, autocomplete: 'username', minlength: '3', maxlength: '32' })),
     field('Password', h('input', { class: 'input', name: 'password', type: 'password', required: true, autocomplete: 'new-password', minlength: '12' })),

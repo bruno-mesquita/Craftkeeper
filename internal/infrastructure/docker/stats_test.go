@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 var (
@@ -126,8 +126,8 @@ func newTestCollector(sock string) (*StatsCollector, *time.Time) {
 func TestCollectContainers(t *testing.T) {
 	f := &fakeDaemon{
 		list: listJSON(
-			entry(idRunning, "mesquita-a", "running", managed),
-			entry(idStopped, "mesquita-b", "exited", managed),
+			entry(idRunning, "craftkeeper-a", "running", managed),
+			entry(idStopped, "craftkeeper-b", "exited", managed),
 			entry(idForeign, "crafty", "running", map[string]string{"other": "x"}), // daemon filter bypassed
 		),
 		stats: map[string]string{idRunning: statsJSON(1_000, 100_000, 500, 100, 300, 100)},
@@ -141,14 +141,14 @@ func TestCollectContainers(t *testing.T) {
 		t.Fatal(err)
 	}
 	if f.listQuery == "" || !strings.Contains(f.listQuery, "all=true") ||
-		!strings.Contains(f.listQuery, "mesquita.managed%3Dtrue") {
+		!strings.Contains(f.listQuery, "craftkeeper.managed%3Dtrue") {
 		t.Fatalf("list query = %q, want all=true and label filter", f.listQuery)
 	}
 	if len(snap.Containers) != 2 {
 		t.Fatalf("got %d containers, want 2 managed: %+v", len(snap.Containers), snap.Containers)
 	}
 	a, b := snap.Containers[0], snap.Containers[1]
-	if a.Name != "mesquita-a" || a.ServerID != "42" || a.State != "running" {
+	if a.Name != "craftkeeper-a" || a.ServerID != "42" || a.State != "running" {
 		t.Fatalf("running container: %+v", a)
 	}
 	if a.MemoryUsedBytes != 200 || a.MemoryLimitBytes != 1000 || a.NetRxBytes != 500 || a.NetTxBytes != 100 ||
@@ -183,7 +183,7 @@ func TestCollectContainers(t *testing.T) {
 
 	// A container that disappears is pruned from the sample map.
 	f.mu.Lock()
-	f.list = listJSON(entry(idStopped, "mesquita-b", "exited", managed))
+	f.list = listJSON(entry(idStopped, "craftkeeper-b", "exited", managed))
 	f.mu.Unlock()
 	if _, err := c.CollectContainers(ctx); err != nil {
 		t.Fatal(err)
@@ -195,7 +195,7 @@ func TestCollectContainers(t *testing.T) {
 
 func TestCollectContainersStatsFailureKeepsContainer(t *testing.T) {
 	f := &fakeDaemon{
-		list:  listJSON(entry(idRunning, "mesquita-a", "running", managed)),
+		list:  listJSON(entry(idRunning, "craftkeeper-a", "running", managed)),
 		stats: map[string]string{idRunning: `{"pad":"` + strings.Repeat("x", maxStatsBytes) + `"}`},
 	}
 	c, _ := newTestCollector(startFake(t, f))
@@ -244,6 +244,24 @@ func TestValidContainerID(t *testing.T) {
 		id, want := tc.id, tc.want
 		if got := validContainerID(id); got != want {
 			t.Errorf("validContainerID(%q) = %v, want %v", id, got, want)
+		}
+	}
+}
+
+func TestManagedBy(t *testing.T) {
+	cases := []struct {
+		labels map[string]string
+		id     string
+		ok     bool
+	}{
+		{map[string]string{LabelManaged: "true", LabelServerID: "A"}, "A", true},
+		{map[string]string{LabelManaged: "1", LabelServerID: "A"}, "", false},
+		{map[string]string{"mesquita.managed": "true", "mesquita.server_id": "A"}, "", false},
+		{nil, "", false},
+	}
+	for _, c := range cases {
+		if id, ok := managedBy(c.labels); id != c.id || ok != c.ok {
+			t.Errorf("managedBy(%v) = %q, %v", c.labels, id, ok)
 		}
 	}
 }

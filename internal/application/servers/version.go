@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // VersionInput is the game a server should run after ChangeVersion.
@@ -53,7 +53,7 @@ func (s *Service) beginReplace(id string) error {
 	s.jobsMu.Lock()
 	defer s.jobsMu.Unlock()
 	if s.replacing[id] {
-		return fmt.Errorf("%w: the server's version is being changed", domain.ErrServerBusy)
+		return fmt.Errorf("%w: the server's container is being replaced", domain.ErrServerBusy)
 	}
 	s.replacing[id] = true
 	return nil
@@ -76,6 +76,20 @@ func (s *Service) replaceContainer(ctx context.Context, old domain.Server, in Ve
 	}
 	x := old
 	x.Loader, x.Version, x.LoaderVersion = in.Loader, in.Version, loaderVersion
+	x, err = s.swapContainer(ctx, old, x)
+	if err != nil {
+		return domain.Server{}, err
+	}
+	if err := s.repo.ClearCrash(context.WithoutCancel(ctx), x.ID); err != nil {
+		return domain.Server{}, fmt.Errorf("clear crash record: %w", err)
+	}
+	x.CrashedAt, x.CrashRestarts = time.Time{}, 0
+	return x, nil
+}
+
+// swapContainer replaces old's stopped container with a new one for x (same server, possibly
+// another version) and records it. Any failure puts old back.
+func (s *Service) swapContainer(ctx context.Context, old, x domain.Server) (domain.Server, error) {
 	java := domain.JavaFor(x.Version)
 	if err := s.runtime.EnsureImage(ctx, java); err != nil {
 		return domain.Server{}, err
@@ -120,11 +134,7 @@ func (s *Service) replaceContainer(ctx context.Context, old domain.Server, in Ve
 		discard()
 		return domain.Server{}, err
 	}
-	s.forgetRestarts(x.ID)
-	if err := s.repo.ClearCrash(undo, x.ID); err != nil {
-		return domain.Server{}, fmt.Errorf("clear crash record: %w", err)
-	}
-	x.CrashedAt, x.CrashRestarts = time.Time{}, 0
+	s.forgetRestarts(x.ID) // the new container's restart count starts at zero
 	return x, nil
 }
 

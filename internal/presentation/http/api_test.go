@@ -20,26 +20,26 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/activity"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/auth"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/backups"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/dashboard"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/files"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/installers"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/maintenance"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/mods"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/monitoring"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/players"
-	"github.com/bruno-mesquita/mesquita-panel/internal/application/servers"
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
-	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/docker"
-	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/filesystem"
-	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/modrinth"
-	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/password"
-	"github.com/bruno-mesquita/mesquita-panel/internal/infrastructure/sqlite"
-	httpapi "github.com/bruno-mesquita/mesquita-panel/internal/presentation/http"
-	wspres "github.com/bruno-mesquita/mesquita-panel/internal/presentation/websocket"
-	"github.com/bruno-mesquita/mesquita-panel/migrations"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/activity"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/auth"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/backups"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/dashboard"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/files"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/installers"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/maintenance"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/mods"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/monitoring"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/players"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/servers"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/docker"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/filesystem"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/modrinth"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/password"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/sqlite"
+	httpapi "github.com/bruno-mesquita/Craftkeeper/internal/presentation/http"
+	wspres "github.com/bruno-mesquita/Craftkeeper/internal/presentation/websocket"
+	"github.com/bruno-mesquita/Craftkeeper/migrations"
 )
 
 const token = "SETUPTOKEN"
@@ -251,7 +251,7 @@ func TestAuthSessionAndCSRF(t *testing.T) {
 		t.Fatal("login must return csrf_token")
 	}
 	base, _ := neturl.Parse(c.base)
-	if cookies := c.http.Jar.Cookies(base); len(cookies) != 1 || cookies[0].Name != "mesquita_session" {
+	if cookies := c.http.Jar.Cookies(base); len(cookies) != 1 || cookies[0].Name != "craftkeeper_session" {
 		t.Fatalf("expected exactly the session cookie, got %v", cookies)
 	}
 
@@ -353,7 +353,7 @@ func TestContainerStats(t *testing.T) {
 	c = newServerWith(t, stubContainers{snap: domain.ContainerSnapshot{
 		CollectedAt: time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC),
 		Containers: []domain.ContainerStats{{
-			ID: "abc", Name: "mesquita-srv", ServerID: "7", State: "running", CPUPercent: 12.5,
+			ID: "abc", Name: "craftkeeper-srv", ServerID: "7", State: "running", CPUPercent: 12.5,
 			MemoryUsedBytes: 100, MemoryLimitBytes: 200, NetRxBytes: 1, NetTxBytes: 2,
 			NetRxBytesPerSecond: 3, NetTxBytesPerSecond: 4, BlockReadBytes: 5, BlockWriteBytes: 6,
 		}},
@@ -363,7 +363,7 @@ func TestContainerStats(t *testing.T) {
 	expect(t, res, body, http.StatusOK, "")
 	got, _ := json.Marshal(body["containers"])
 	want := `[{"block_io":{"read_bytes":5,"write_bytes":6},"cpu_percent":12.5,"id":"abc",` +
-		`"memory":{"limit_bytes":200,"used_bytes":100},"name":"mesquita-srv",` +
+		`"memory":{"limit_bytes":200,"used_bytes":100},"name":"craftkeeper-srv",` +
 		`"network":{"rx_bytes":1,"rx_bytes_per_second":3,"tx_bytes":2,"tx_bytes_per_second":4},` +
 		`"server_id":"7","state":"running"}]`
 	if string(got) != want {

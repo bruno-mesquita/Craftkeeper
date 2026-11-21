@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 func TestProtectBacksUpThenChanges(t *testing.T) {

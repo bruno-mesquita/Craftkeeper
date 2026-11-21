@@ -1,6 +1,6 @@
 # Architecture
 
-Mesquita Panel is one static Linux binary: a Go HTTP server with an embedded HTML + Vanilla JS
+Craftkeeper is one static Linux binary: a Go HTTP server with an embedded HTML + Vanilla JS
 frontend. It manages game servers as Docker containers on the same host and keeps its own
 state in SQLite. Requirements live in [`SPEC.md`](SPEC.md); decisions, with their reasons, in
 [`../MEMORY.md`](../MEMORY.md) (`D1`–`D45`).
@@ -51,7 +51,7 @@ runtime, repositories, version sources and the WebSocket adapter.
 `internal/infrastructure/docker` talks to the Engine API (`/v1.44`) over the unix socket with
 `net/http`; there is no Docker SDK (D5, D16). Only allowlisted endpoints are used, and every
 operation on an existing container first inspects it and checks the labels
-`mesquita.managed=true` and `mesquita.server_id` against the database (D22). Containers the
+`craftkeeper.managed=true` and `craftkeeper.server_id` against the database (D22). Containers the
 panel did not create — Crafty and its servers — are never listed or touched.
 
 Game servers run `itzg/minecraft-server`, one image per Java version, pinned by digest (D19,
@@ -103,7 +103,9 @@ without changing clients or data:
 - REST JSON under `/api/v1` — [`API.md`](API.md).
 - WebSocket messages — [`WEBSOCKET.md`](WEBSOCKET.md).
 - SQLite schema — `migrations/`.
-- Docker labels `mesquita.managed`, `mesquita.server_id`, `mesquita.game`.
+- Docker labels `craftkeeper.managed`, `craftkeeper.server_id`, `craftkeeper.game`.
+- Marker files at the root of each server directory: `.craftkeeper-modpack`,
+  `.craftkeeper-modpack-installed`, `.craftkeeper-modpack-supported`.
 
 No Go-specific types or error names leak into them.
 

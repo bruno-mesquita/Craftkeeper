@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/bruno-mesquita/mesquita-panel/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
 )
 
 // newFiles returns a ServerFiles whose server `id` has an empty directory at the returned
@@ -136,6 +136,9 @@ func TestListAndInternalSymlinks(t *testing.T) {
 	write(t, filepath.Join(dir, "world", "level.dat"), "x")
 	write(t, filepath.Join(dir, "Banned.json"), "[]")
 	symlink(t, "server.properties", filepath.Join(dir, "cfg"))
+	for _, name := range []string{domain.ModpackConfigFile, domain.ModpackInstalledFile, domain.ModpackSupportedFile} {
+		write(t, filepath.Join(dir, name), "x") // panel metadata stays hidden
+	}
 
 	l, err := f.List(id, "") // paths reach the adapter cleaned: "" is the root
 	if err != nil {
@@ -367,6 +370,8 @@ func TestWriteZip(t *testing.T) {
 	write(t, filepath.Join(dir, "world", "level.dat"), "level")
 	write(t, filepath.Join(dir, "world", "region", "r.0.0.mca"), "region")
 	write(t, filepath.Join(dir, ".hidden"), "h")
+	write(t, filepath.Join(dir, domain.ModpackSupportedFile), "")
+	write(t, filepath.Join(dir, tempPrefix+"upload"), "partial")
 	symlink(t, "/etc", filepath.Join(dir, "world", "etc"))
 	symlink(t, "level.dat", filepath.Join(dir, "world", "inner-link"))
 
@@ -389,8 +394,14 @@ func TestWriteZip(t *testing.T) {
 	if err := f.WriteZip(id, "", &buf); err != nil {
 		t.Fatal(err)
 	}
-	if got := zipNames(t, buf.Bytes()); got["server/.hidden"] != "h" || got["server/world/level.dat"] != "level" {
+	got = zipNames(t, buf.Bytes())
+	if got["server/.hidden"] != "h" || got["server/world/level.dat"] != "level" {
 		t.Fatalf("root zip = %v", got)
+	}
+	for _, skipped := range []string{domain.ModpackSupportedFile, tempPrefix + "upload"} {
+		if _, ok := got["server/"+skipped]; ok {
+			t.Fatalf("root zip must skip %s: %v", skipped, got)
+		}
 	}
 	if err := f.WriteZip(id, ".hidden", io.Discard); !errors.Is(err, domain.ErrNotDirectory) {
 		t.Fatalf("zip of a file = %v", err)
