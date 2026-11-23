@@ -95,7 +95,7 @@ func writeDomainError(w http.ResponseWriter, log *slog.Logger, err error) {
 	case errors.Is(err, domain.ErrServerBusy):
 		writeError(w, http.StatusConflict, "server_busy", "the server is being created, started or restarted; try again shortly")
 	case errors.Is(err, domain.ErrModpackServer):
-		writeError(w, http.StatusConflict, "modpack_server", "the server runs a modpack, whose scripts choose the game version")
+		writeError(w, http.StatusConflict, "modpack_server", "the server runs a modpack, which chooses the game version and its mods")
 	case errors.Is(err, domain.ErrModsUnsupported):
 		writeError(w, http.StatusConflict, "mods_unsupported", "the server has no mod loader")
 	case errors.Is(err, domain.ErrModIncompatible):
@@ -103,6 +103,15 @@ func writeDomainError(w http.ResponseWriter, log *slog.Logger, err error) {
 	case errors.Is(err, domain.ErrModrinthUnavailable):
 		log.Warn("modrinth unavailable", "err", err)
 		writeError(w, http.StatusServiceUnavailable, "modrinth_unavailable", "Modrinth could not be reached or sent an invalid file; try again later")
+	case errors.Is(err, domain.ErrModpackUnsupported):
+		writeError(w, http.StatusUnprocessableEntity, "modpack_unsupported", "the modpack version needs a loader or Minecraft version the panel cannot run (Fabric, Forge or NeoForge on a release)")
+	case errors.Is(err, domain.ErrCurseForgeNotConfigured):
+		writeError(w, http.StatusConflict, "curseforge_not_configured", "add a CurseForge API key in Settings first")
+	case errors.Is(err, domain.ErrCurseForgeKeyInvalid):
+		writeError(w, http.StatusBadRequest, "curseforge_key_invalid", "CurseForge refused the API key; check it in Settings")
+	case errors.Is(err, domain.ErrCurseForgeUnavailable):
+		log.Warn("curseforge unavailable", "err", err)
+		writeError(w, http.StatusServiceUnavailable, "curseforge_unavailable", "CurseForge could not be reached or sent an invalid answer; try again later")
 	case errors.Is(err, domain.ErrInvalidWorld):
 		writeError(w, http.StatusUnprocessableEntity, "invalid_world", "the archive does not contain a Minecraft world (level.dat)")
 	case errors.Is(err, domain.ErrBackupFailed):

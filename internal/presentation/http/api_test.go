@@ -27,11 +27,13 @@ import (
 	"github.com/bruno-mesquita/Craftkeeper/internal/application/files"
 	"github.com/bruno-mesquita/Craftkeeper/internal/application/installers"
 	"github.com/bruno-mesquita/Craftkeeper/internal/application/maintenance"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/modpacks"
 	"github.com/bruno-mesquita/Craftkeeper/internal/application/mods"
 	"github.com/bruno-mesquita/Craftkeeper/internal/application/monitoring"
 	"github.com/bruno-mesquita/Craftkeeper/internal/application/players"
 	"github.com/bruno-mesquita/Craftkeeper/internal/application/servers"
 	"github.com/bruno-mesquita/Craftkeeper/internal/domain"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/curseforge"
 	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/docker"
 	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/filesystem"
 	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/modrinth"
@@ -75,6 +77,7 @@ type client struct {
 	console *recordConsole
 	pinger  *fakePinger
 	mr      *fakeModrinth
+	cf      *fakeCurseForge
 
 	serversDir string
 }
@@ -107,28 +110,32 @@ func newServerWith(t *testing.T, containers monitoring.ContainerCollector) *clie
 	installersSvc := installers.NewService(src, time.Hour)
 	dataDir := t.TempDir()
 	serversDir, backupsDir := filepath.Join(dataDir, "servers"), filepath.Join(dataDir, "backups")
+	settings := sqlite.NewSettings(store)
 	serversSvc := servers.NewService(sqlite.NewServers(store), rt, filesystem.NewServerDirs(serversDir, backupsDir, os.Getuid(), os.Getgid()),
-		installersSvc, audit, servers.Config{FirstPort: 25601, LastPort: 25700, HostCPUs: 4, PortFree: func(int) bool { return true }})
+		installersSvc, audit, servers.Config{FirstPort: 25601, LastPort: 25700, HostCPUs: 4, PortFree: func(int) bool { return true },
+			CurseForgeKey: settings.CurseForgeKey})
 	t.Cleanup(serversSvc.Close)
 	serverFiles := filesystem.NewServerFiles(serversDir, os.Getuid(), os.Getgid())
 	backupsSvc := backups.NewService(sqlite.NewBackups(store), filesystem.NewBackups(backupsDir, serverFiles),
 		serversSvc, stubConsole{}, audit, log)
 	t.Cleanup(backupsSvc.Close)
-	mr := newFakeModrinth(t)
+	mr, cf := newFakeModrinth(t), newFakeCurseForge(t)
+	maintenanceSvc := maintenance.NewService(serversSvc, backupsSvc, serverFiles, audit)
 	api := httpapi.New(authSvc,
 		monitoring.NewService(stubCollector{}, containers, time.Second),
 		dashboard.NewService(docker.NewClient(filepath.Join(t.TempDir(), "no-docker.sock")), serversSvc, audit),
 		activity.NewService(audit),
 		serversSvc, installersSvc, files.NewService(serverFiles, serversSvc, audit), backupsSvc,
 		players.NewService(serverFiles, serversSvc, pc, fakeAccounts{}, pinger, audit),
-		maintenance.NewService(serversSvc, backupsSvc, serverFiles, audit),
+		maintenanceSvc,
 		mods.NewService(modrinth.New(mr.urls), serverFiles, serversSvc, backupsSvc, audit),
+		modpacks.NewService(modrinth.New(mr.urls), curseforge.New(cf.urls), settings, serversSvc, maintenanceSvc, audit),
 		wspres.NewHub(authSvc, nil, log), static, false, log)
 
 	srv := httptest.NewServer(api.Handler())
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
-	return &client{t: t, base: srv.URL, http: &http.Client{Jar: jar}, rt: rt, src: src, console: pc, pinger: pinger, mr: mr, serversDir: serversDir}
+	return &client{t: t, base: srv.URL, http: &http.Client{Jar: jar}, rt: rt, src: src, console: pc, pinger: pinger, mr: mr, cf: cf, serversDir: serversDir}
 }
 
 // do sends a same-origin request the way a browser would (Sec-Fetch-Site: same-origin).

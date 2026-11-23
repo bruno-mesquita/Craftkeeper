@@ -43,6 +43,8 @@ func TestServersRepository(t *testing.T) {
 
 	a.Description, a.MemoryMB, a.ContainerID, a.UpdatedAt = "desc", 4096, "cid", now.Add(time.Hour)
 	a.Loader, a.Version, a.LoaderVersion = domain.LoaderFabric, "1.21.1", "0.20.1" // version change
+	a.Modpack = domain.ModpackRef{Source: domain.ModpackSourceModrinth, ProjectID: "AAAAAAAA", Slug: "pack",
+		VersionID: "BBBBBBBB", Name: "Pack", VersionName: "1.0"}
 	if err := r.Update(ctx, a); err != nil {
 		t.Fatal(err)
 	}

@@ -107,6 +107,7 @@ type fakeServers struct {
 	status domain.ServerStatus
 	// afterBackup, when set, becomes the status once the backup is made.
 	afterBackup domain.ServerStatus
+	modpack     domain.ModpackRef
 }
 
 func (f *fakeServers) Get(_ context.Context, id string) (servers.View, error) {
@@ -115,7 +116,7 @@ func (f *fakeServers) Get(_ context.Context, id string) (servers.View, error) {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return servers.View{Server: domain.Server{ID: id, Name: "Survival"}, Status: f.status}, nil
+	return servers.View{Server: domain.Server{ID: id, Name: "Survival", Modpack: f.modpack}, Status: f.status}, nil
 }
 
 func (f *fakeServers) ResolveVersion(_ context.Context, in servers.VersionInput) (string, error) {
@@ -128,6 +129,11 @@ func (f *fakeServers) ResolveVersion(_ context.Context, in servers.VersionInput)
 func (f *fakeServers) ChangeVersion(_ context.Context, id string, in servers.VersionInput, _ servers.Actor) (servers.View, error) {
 	f.env.record("version " + in.Loader + " " + in.Version)
 	return servers.View{Server: domain.Server{ID: id, Loader: in.Loader, Version: in.Version}, Status: domain.StatusStopped}, nil
+}
+
+func (f *fakeServers) ChangeModpack(_ context.Context, id string, ref domain.ModpackRef, game servers.VersionInput, _ servers.Actor) (servers.View, error) {
+	f.env.record("modpack " + ref.VersionID + " " + game.Loader + " " + game.Version)
+	return servers.View{Server: domain.Server{ID: id, Loader: game.Loader, Version: game.Version, Modpack: ref}, Status: domain.StatusStopped}, nil
 }
 
 type fakeBackups struct{ env *env }
@@ -191,6 +197,53 @@ func TestChangeVersion(t *testing.T) {
 		if ev := e.events(); len(ev) != 0 {
 			t.Errorf("%s: events = %v", name, ev)
 		}
+	}
+}
+
+func TestChangeModpack(t *testing.T) {
+	ctx := context.Background()
+	pack := domain.ModpackRef{Source: domain.ModpackSourceModrinth, ProjectID: "AAAAAAAA", VersionID: "BBBBBBBB"}
+	next := pack
+	next.VersionID = "CCCCCCCC"
+	game := servers.VersionInput{Loader: "fabric", Version: "1.21.1"}
+
+	e := newEnv(t)
+	e.srv.modpack = pack
+	v, err := e.svc.ChangeModpack(ctx, serverID, next, game, actor)
+	if err != nil || v.Modpack != next {
+		t.Fatalf("view %+v, err %v", v, err)
+	}
+	if ev := e.events(); !slices.Equal(ev, []string{"backup", "modpack CCCCCCCC fabric 1.21.1"}) {
+		t.Fatalf("events = %v", ev)
+	}
+
+	other := next
+	other.ProjectID = "DDDDDDDD"
+	for name, tc := range map[string]struct {
+		status  domain.ServerStatus
+		current domain.ModpackRef
+		ref     domain.ModpackRef
+		want    error
+	}{
+		"running":      {domain.StatusRunning, pack, next, domain.ErrServerRunning},
+		"no modpack":   {domain.StatusStopped, domain.ModpackRef{}, next, domain.ErrNotFound},
+		"another pack": {domain.StatusStopped, pack, other, domain.ErrNotFound},
+	} {
+		e := newEnv(t)
+		e.srv.status, e.srv.modpack = tc.status, tc.current
+		if _, err := e.svc.ChangeModpack(ctx, serverID, tc.ref, game, actor); !errors.Is(err, tc.want) {
+			t.Errorf("%s: err = %v", name, err)
+		}
+		if ev := e.events(); len(ev) != 0 {
+			t.Errorf("%s: events = %v", name, ev)
+		}
+	}
+
+	// A catalog modpack sets the version: ChangeVersion is refused.
+	e = newEnv(t)
+	e.srv.modpack = pack
+	if _, err := e.svc.ChangeVersion(ctx, serverID, game, actor); !errors.Is(err, domain.ErrModpackServer) {
+		t.Fatalf("ChangeVersion on a modpack server: %v", err)
 	}
 }
 

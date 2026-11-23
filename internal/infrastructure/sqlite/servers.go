@@ -15,16 +15,18 @@ type Servers struct{ s *Store }
 func NewServers(s *Store) *Servers { return &Servers{s: s} }
 
 const serverColumns = `id, name, description, game, loader, version, loader_version, memory_mb, cpu_millicores,
-	port, container_id, created_at, updated_at`
+	port, container_id, created_at, updated_at, modpack_source, modpack_project, modpack_slug, modpack_version,
+	modpack_name, modpack_version_name`
 
 // selectServerColumns adds the crash record, written only by MarkCrashed and ClearCrash.
 const selectServerColumns = serverColumns + `, crashed_at, crash_restarts`
 
 // Create stores x. A duplicate name or port is reported as a ValidationError on that field.
 func (r *Servers) Create(ctx context.Context, x domain.Server) error {
-	_, err := r.s.write.ExecContext(ctx, `INSERT INTO servers (`+serverColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := r.s.write.ExecContext(ctx, `INSERT INTO servers (`+serverColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		x.ID, x.Name, x.Description, x.Game, x.Loader, x.Version, x.LoaderVersion, x.MemoryMB, x.CPUMillicores, x.Port,
-		x.ContainerID, unix(x.CreatedAt), unix(x.UpdatedAt))
+		x.ContainerID, unix(x.CreatedAt), unix(x.UpdatedAt), x.Modpack.Source, x.Modpack.ProjectID, x.Modpack.Slug,
+		x.Modpack.VersionID, x.Modpack.Name, x.Modpack.VersionName)
 	return uniqueViolation(err)
 }
 
@@ -55,14 +57,16 @@ func (r *Servers) List(ctx context.Context) ([]domain.Server, error) {
 }
 
 // Update stores the editable fields of x: name, description, limits, game version (loader,
-// Minecraft and loader build) and container ID.
+// Minecraft and loader build), modpack and container ID.
 func (r *Servers) Update(ctx context.Context, x domain.Server) error {
 	res, err := r.s.write.ExecContext(ctx,
 		`UPDATE servers SET name = ?, description = ?, memory_mb = ?, cpu_millicores = ?, loader = ?, version = ?,
-		 loader_version = ?, container_id = ?, updated_at = ?
+		 loader_version = ?, container_id = ?, updated_at = ?, modpack_source = ?, modpack_project = ?,
+		 modpack_slug = ?, modpack_version = ?, modpack_name = ?, modpack_version_name = ?
 		 WHERE id = ?`,
 		x.Name, x.Description, x.MemoryMB, x.CPUMillicores, x.Loader, x.Version, x.LoaderVersion, x.ContainerID,
-		unix(x.UpdatedAt), x.ID)
+		unix(x.UpdatedAt), x.Modpack.Source, x.Modpack.ProjectID, x.Modpack.Slug, x.Modpack.VersionID, x.Modpack.Name,
+		x.Modpack.VersionName, x.ID)
 	if err != nil {
 		return uniqueViolation(err)
 	}
@@ -121,7 +125,8 @@ func scanServer(row interface{ Scan(...any) error }) (domain.Server, error) {
 	var created, updated int64
 	var crashed sql.NullInt64
 	err := row.Scan(&x.ID, &x.Name, &x.Description, &x.Game, &x.Loader, &x.Version, &x.LoaderVersion, &x.MemoryMB, &x.CPUMillicores,
-		&x.Port, &x.ContainerID, &created, &updated, &crashed, &x.CrashRestarts)
+		&x.Port, &x.ContainerID, &created, &updated, &x.Modpack.Source, &x.Modpack.ProjectID, &x.Modpack.Slug,
+		&x.Modpack.VersionID, &x.Modpack.Name, &x.Modpack.VersionName, &crashed, &x.CrashRestarts)
 	if err != nil {
 		return domain.Server{}, err
 	}

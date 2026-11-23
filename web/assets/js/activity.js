@@ -21,6 +21,7 @@ const GROUPS = [
   ['Mods', {
     'mod.install': 'Mod installed', 'mod.update': 'Mod updated', 'mod.remove': 'Mod removed',
     'mod.enable': 'Mod enabled', 'mod.disable': 'Mod disabled',
+    'modpack.update': 'Modpack updated', 'settings.curseforge_key': 'CurseForge key',
   }],
   ['Backups', { 'backup.create': 'Backup', 'backup.restore': 'Restore', 'backup.delete': 'Backup deleted', 'backup.schedule_update': 'Backup schedule' }],
   ['Players', {

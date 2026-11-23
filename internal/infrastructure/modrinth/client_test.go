@@ -134,3 +134,28 @@ func TestErrors(t *testing.T) {
 		t.Fatalf("icon outside the CDN: %v", err)
 	}
 }
+
+func TestSearchModpacksAndUnfilteredVersions(t *testing.T) {
+	c, _ := newTest(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/search":
+			f := r.URL.Query().Get("facets")
+			if !strings.Contains(f, `"project_type:modpack"`) || !strings.Contains(f, `"categories:neoforge"`) || strings.Contains(f, "versions:") {
+				t.Errorf("facets = %s", f)
+			}
+			w.Write([]byte(`{"hits":[{"project_id":"AAAAAAAA","slug":"p","title":"P"}],"offset":0,"total_hits":1}`))
+		case "/v2/project/AAAAAAAA/version":
+			if q := r.URL.Query(); q.Has("loaders") || q.Has("game_versions") {
+				t.Errorf("filtered versions: %v", q)
+			}
+			w.Write([]byte(`[]`))
+		}
+	})
+	res, err := c.SearchModpacks(context.Background(), "", 0)
+	if err != nil || len(res.Hits) != 1 || res.Hits[0].ID != "AAAAAAAA" {
+		t.Fatalf("search = %+v, %v", res, err)
+	}
+	if _, err := c.ProjectVersions(context.Background(), "AAAAAAAA", "", ""); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -39,10 +39,57 @@ func (s *Service) ChangeVersion(ctx context.Context, id string, in VersionInput,
 	}
 	defer s.endReplace(old.ID)
 
-	x, err := s.replaceContainer(ctx, old, in)
+	x, err := s.changeVersion(ctx, old, in)
 	target := old.Name + ": " + versionLabel(old) + " → " + versionLabel(domain.Server{
 		Loader: in.Loader, Version: in.Version, LoaderVersion: x.LoaderVersion})
 	s.record(ctx, actor, domain.AuditServerVersionChange, old.ID, target, err == nil)
+	if err != nil {
+		return View{}, err
+	}
+	return s.view(ctx, x)
+}
+
+func (s *Service) changeVersion(ctx context.Context, old domain.Server, in VersionInput) (domain.Server, error) {
+	if err := s.requireStopped(ctx, old); err != nil {
+		return domain.Server{}, err
+	}
+	loaderVersion, err := s.installers.Resolve(ctx, in.Loader, in.Version, in.LoaderVersion)
+	if err != nil {
+		return domain.Server{}, err
+	}
+	x := old
+	x.Loader, x.Version, x.LoaderVersion = in.Loader, in.Version, loaderVersion
+	return s.replaceContainer(ctx, old, x)
+}
+
+// ChangeModpack makes a stopped server run another version of a catalog modpack (ref), whose
+// game (loader and Minecraft version) the catalog reported. Like ChangeVersion, the container
+// is replaced; on its next start the game image swaps the pack's files and keeps the world.
+// The caller backs the server up first.
+func (s *Service) ChangeModpack(ctx context.Context, id string, ref domain.ModpackRef, game VersionInput, actor Actor) (View, error) {
+	if err := validateModpack(ref, game); err != nil {
+		return View{}, err
+	}
+	old, err := s.repo.ByID(ctx, id)
+	if err != nil {
+		return View{}, err
+	}
+	if err := s.checkBuilt(old); err != nil {
+		return View{}, err
+	}
+	if err := s.beginReplace(old.ID); err != nil {
+		return View{}, err
+	}
+	defer s.endReplace(old.ID)
+
+	x := old
+	x.Loader, x.Version, x.LoaderVersion, x.Modpack = game.Loader, game.Version, "", ref
+	err = s.requireStopped(ctx, old)
+	if err == nil {
+		x, err = s.replaceContainer(ctx, old, x)
+	}
+	target := old.Name + ": " + ref.Name + " " + old.Modpack.VersionName + " → " + ref.VersionName
+	s.record(ctx, actor, domain.AuditModpackUpdate, old.ID, target, err == nil)
 	if err != nil {
 		return View{}, err
 	}
@@ -65,18 +112,10 @@ func (s *Service) endReplace(id string) {
 	s.jobsMu.Unlock()
 }
 
-// replaceContainer swaps old's container for one running the new version and records it.
-func (s *Service) replaceContainer(ctx context.Context, old domain.Server, in VersionInput) (domain.Server, error) {
-	if err := s.requireStopped(ctx, old); err != nil {
-		return domain.Server{}, err
-	}
-	loaderVersion, err := s.installers.Resolve(ctx, in.Loader, in.Version, in.LoaderVersion)
-	if err != nil {
-		return domain.Server{}, err
-	}
-	x := old
-	x.Loader, x.Version, x.LoaderVersion = in.Loader, in.Version, loaderVersion
-	x, err = s.swapContainer(ctx, old, x)
+// replaceContainer swaps old's stopped container for one running x's game, records it and
+// forgets the crash record of the old one.
+func (s *Service) replaceContainer(ctx context.Context, old, x domain.Server) (domain.Server, error) {
+	x, err := s.swapContainer(ctx, old, x)
 	if err != nil {
 		return domain.Server{}, err
 	}
@@ -91,6 +130,10 @@ func (s *Service) replaceContainer(ctx context.Context, old domain.Server, in Ve
 // another version) and records it. Any failure puts old back.
 func (s *Service) swapContainer(ctx context.Context, old, x domain.Server) (domain.Server, error) {
 	java := domain.JavaFor(x.Version)
+	env, err := s.containerEnv(ctx, x)
+	if err != nil {
+		return domain.Server{}, err
+	}
 	if err := s.runtime.EnsureImage(ctx, java); err != nil {
 		return domain.Server{}, err
 	}
@@ -106,7 +149,7 @@ func (s *Service) swapContainer(ctx context.Context, old, x domain.Server) (doma
 	}
 	putBack := func() { _ = s.runtime.RenameReplaced(undo, old.ContainerID, old.ID, false) }
 	cid, err := s.runtime.Create(ctx, domain.ContainerSpec{
-		ServerID: x.ID, Game: x.Game, Java: java, Env: minecraftEnv(x), DataDir: dir,
+		ServerID: x.ID, Game: x.Game, Java: java, Env: env, DataDir: dir,
 		Port: x.Port, MemoryMB: x.MemoryMB, CPUMillicores: x.CPUMillicores,
 	})
 	if err != nil {

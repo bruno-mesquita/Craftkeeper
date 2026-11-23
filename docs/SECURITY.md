@@ -84,6 +84,21 @@ it streams into a temporary file that is renamed into `mods/` only after the che
 256 KiB) so the CSP keeps `img-src 'self' data:`. Mods are third-party code that runs in the
 game container with its restrictions (D21); the panel cannot vouch for them (D64–D67).
 
+## Modpacks (Modrinth, CurseForge)
+
+The panel only reads catalog metadata (`api.modrinth.com`, `api.curseforge.com`); the game image
+downloads and installs the pack inside the container. Every value that reaches the container's
+environment is validated against the catalogs' formats first: Modrinth IDs (8 base62
+characters), CurseForge IDs (digits) and slugs (`[a-z0-9_-]`). Icons are proxied from
+`cdn.modrinth.com` / `media.forgecdn.net` only, with the mod icon rules.
+
+The CurseForge API key is entered in Settings, checked with CurseForge, and stored in the
+SQLite `settings` table (the database file is readable only by the panel user). The API returns
+only whether a key is saved and its last 4 characters. Containers of CurseForge packs receive it
+as `CF_API_KEY` in their environment, which `docker inspect` shows to anyone with Docker access
+(root-equivalent anyway). Removing the key does not change existing containers until a pack
+update recreates them. Saving and removing the key are audited (`settings.curseforge_key`).
+
 ## Service hardening
 
 The systemd unit runs as a dedicated `craftkeeper` user with `NoNewPrivileges`,

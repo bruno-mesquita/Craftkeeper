@@ -72,19 +72,34 @@ func New(urls URLs) *Client {
 // Search finds server-side mods for loader on Minecraft mc: most relevant first, or most
 // downloaded first when query is empty.
 func (c *Client) Search(ctx context.Context, query, loader, mc string, offset int) (domain.ModSearch, error) {
-	index := "relevance"
-	if query == "" {
-		index = "downloads"
-	}
-	facets, _ := json.Marshal([][]string{
+	return c.search(ctx, query, offset, [][]string{
 		{"project_type:mod"},
 		{"categories:" + loader},
 		{"versions:" + mc},
 		{"server_side:required", "server_side:optional"},
 	})
+}
+
+// SearchModpacks finds modpacks that run on a server with a loader the panel installs, ordered
+// as Search orders mods.
+func (c *Client) SearchModpacks(ctx context.Context, query string, offset int) (domain.ModSearch, error) {
+	return c.search(ctx, query, offset, [][]string{
+		{"project_type:modpack"},
+		{"categories:" + domain.LoaderFabric, "categories:" + domain.LoaderForge, "categories:" + domain.LoaderNeoForge},
+		{"server_side:required", "server_side:optional"},
+	})
+}
+
+// search runs one search page; facets is Modrinth's AND-of-ORs filter.
+func (c *Client) search(ctx context.Context, query string, offset int, facets [][]string) (domain.ModSearch, error) {
+	index := "relevance"
+	if query == "" {
+		index = "downloads"
+	}
+	enc, _ := json.Marshal(facets)
 	q := url.Values{
 		"query":  {query},
-		"facets": {string(facets)},
+		"facets": {string(enc)},
 		"index":  {index},
 		"offset": {strconv.Itoa(offset)},
 		"limit":  {strconv.Itoa(searchLimit)},
@@ -129,15 +144,21 @@ func (c *Client) Projects(ctx context.Context, ids []string) (map[string]domain.
 	return out, nil
 }
 
-// ProjectVersions lists a project's versions for loader on Minecraft mc, newest first.
-// An unknown project is domain.ErrNotFound.
+// ProjectVersions lists a project's versions for loader on Minecraft mc, newest first; an
+// empty loader or mc does not filter. An unknown project is domain.ErrNotFound.
 func (c *Client) ProjectVersions(ctx context.Context, projectID, loader, mc string) ([]domain.ModVersion, error) {
 	if err := domain.ValidateModrinthID("project_id", projectID); err != nil {
 		return nil, err
 	}
-	loaders, _ := json.Marshal([]string{loader})
-	games, _ := json.Marshal([]string{mc})
-	q := url.Values{"loaders": {string(loaders)}, "game_versions": {string(games)}}
+	q := url.Values{}
+	if loader != "" {
+		loaders, _ := json.Marshal([]string{loader})
+		q.Set("loaders", string(loaders))
+	}
+	if mc != "" {
+		games, _ := json.Marshal([]string{mc})
+		q.Set("game_versions", string(games))
+	}
 	var list []version
 	if err := c.getJSON(ctx, "/project/"+projectID+"/version?"+q.Encode(), &list); err != nil {
 		return nil, err

@@ -19,6 +19,10 @@ type Config struct {
 
 	// PortFree reports whether a host port can be bound right now.
 	PortFree func(port int) bool
+
+	// CurseForgeKey returns the stored CurseForge API key ("" when none). Containers of
+	// CurseForge modpacks get it in their environment.
+	CurseForgeKey func(ctx context.Context) (string, error)
 }
 
 // View is a server with its current status.
@@ -45,6 +49,10 @@ type CreateInput struct {
 	Port          int // 0 picks the first free port of the range
 	AcceptEULA    bool
 	Start         bool // start the server once it is created
+
+	// Modpack, when set, is the catalog modpack version the server runs; Loader and Version
+	// are then the game it runs (from the catalog) and LoaderVersion must be empty.
+	Modpack domain.ModpackRef
 }
 
 // UpdateInput changes only the fields that are not nil.
@@ -105,9 +113,15 @@ func (s *Service) Create(ctx context.Context, in CreateInput, actor Actor) (View
 	if err := s.validateCreate(in); err != nil {
 		return View{}, err
 	}
-	// Outside the lock: modded servers may wait on the version sources.
-	loaderVersion, err := s.installers.Resolve(ctx, in.Loader, in.Version, in.LoaderVersion)
-	if err != nil {
+	// Outside the lock: modded servers may wait on the version sources. A modpack brings
+	// its own loader build.
+	loaderVersion := ""
+	if !in.Modpack.Set() {
+		var err error
+		if loaderVersion, err = s.installers.Resolve(ctx, in.Loader, in.Version, in.LoaderVersion); err != nil {
+			return View{}, err
+		}
+	} else if err := s.checkModpackKey(ctx, in.Modpack); err != nil {
 		return View{}, err
 	}
 
@@ -123,7 +137,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput, actor Actor) (View
 		ID: rand.Text(), Name: in.Name, Description: in.Description,
 		Game: domain.GameMinecraft, Loader: in.Loader, Version: in.Version, LoaderVersion: loaderVersion,
 		MemoryMB: in.MemoryMB, CPUMillicores: in.CPUMillicores, Port: port,
-		CreatedAt: now, UpdatedAt: now,
+		CreatedAt: now, UpdatedAt: now, Modpack: in.Modpack,
 	}
 	if err := s.repo.Create(ctx, x); err != nil {
 		return View{}, err
@@ -169,12 +183,16 @@ func (s *Service) build(ctx context.Context, x *domain.Server) error {
 	if err := s.runtime.EnsureImage(ctx, java); err != nil {
 		return err
 	}
+	env, err := s.containerEnv(ctx, *x)
+	if err != nil {
+		return err
+	}
 	dir, err := s.dirs.Create(x.ID)
 	if err != nil {
 		return err
 	}
 	cid, err := s.runtime.Create(ctx, domain.ContainerSpec{
-		ServerID: x.ID, Game: x.Game, Java: java, Env: minecraftEnv(*x), DataDir: dir,
+		ServerID: x.ID, Game: x.Game, Java: java, Env: env, DataDir: dir,
 		Port: x.Port, MemoryMB: x.MemoryMB, CPUMillicores: x.CPUMillicores,
 	})
 	if err != nil {
@@ -295,7 +313,62 @@ func (s *Service) validateCreate(in CreateInput) error {
 	if !in.AcceptEULA {
 		return &domain.ValidationError{Field: "accept_eula", Message: "the Minecraft EULA must be accepted"}
 	}
+	if in.Modpack.Set() {
+		if in.LoaderVersion != "" {
+			return &domain.ValidationError{Field: "loader_version", Message: "is set by the modpack"}
+		}
+		return validateModpack(in.Modpack, VersionInput{Loader: in.Loader, Version: in.Version})
+	}
 	return nil
+}
+
+// validateModpack checks a modpack reference and the game it runs: a modded loader on a
+// Minecraft release. Everything here ends up in the container's environment.
+func validateModpack(m domain.ModpackRef, game VersionInput) error {
+	for _, err := range []error{
+		domain.ValidateModpackID(m.Source, "project_id", m.ProjectID),
+		domain.ValidateModpackID(m.Source, "version_id", m.VersionID),
+		domain.ValidateLoader(game.Loader),
+	} {
+		if err != nil {
+			return err
+		}
+	}
+	if m.Source == domain.ModpackSourceCurseForge && !domain.ValidProjectSlug(m.Slug) {
+		return &domain.ValidationError{Field: "slug", Message: "is not a CurseForge slug"}
+	}
+	if !domain.Modded(game.Loader) || !domain.IsMinecraftRelease(game.Version) {
+		return domain.ErrModpackUnsupported
+	}
+	return nil
+}
+
+// checkModpackKey refuses a CurseForge modpack while no API key is stored: its container
+// could not download the pack.
+func (s *Service) checkModpackKey(ctx context.Context, m domain.ModpackRef) error {
+	if m.Source != domain.ModpackSourceCurseForge {
+		return nil
+	}
+	_, err := s.containerEnv(ctx, domain.Server{Modpack: m})
+	return err
+}
+
+// containerEnv is the environment of x's container.
+func (s *Service) containerEnv(ctx context.Context, x domain.Server) ([]string, error) {
+	key := ""
+	if x.Modpack.Source == domain.ModpackSourceCurseForge {
+		var err error
+		if s.cfg.CurseForgeKey != nil {
+			key, err = s.cfg.CurseForgeKey(ctx)
+		}
+		switch {
+		case err != nil:
+			return nil, err
+		case key == "":
+			return nil, domain.ErrCurseForgeNotConfigured
+		}
+	}
+	return minecraftEnv(x, key), nil
 }
 
 // pickPort validates a requested port, or picks the first free one of the range.

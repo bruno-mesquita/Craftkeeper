@@ -140,6 +140,9 @@
       text-foreground shadow-2xl backdrop:bg-black/70 backdrop:backdrop-blur-sm;
     animation: pop 0.18s ease-out;
   }
+  .dialog-wide {
+    @apply w-[min(48rem,calc(100%-2rem))];
+  }
   .form-error {
     @apply rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger;
   }

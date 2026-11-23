@@ -13,6 +13,7 @@ import (
 	"github.com/bruno-mesquita/Craftkeeper/internal/application/files"
 	"github.com/bruno-mesquita/Craftkeeper/internal/application/installers"
 	"github.com/bruno-mesquita/Craftkeeper/internal/application/maintenance"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/modpacks"
 	"github.com/bruno-mesquita/Craftkeeper/internal/application/mods"
 	"github.com/bruno-mesquita/Craftkeeper/internal/application/monitoring"
 	"github.com/bruno-mesquita/Craftkeeper/internal/application/players"
@@ -33,6 +34,7 @@ type API struct {
 	players     *players.Service
 	maintenance *maintenance.Service
 	mods        *mods.Service
+	modpacks    *modpacks.Service
 	ws          *wspres.Hub
 	static      fs.FS
 	// secureCookie marks the session cookie Secure even on plain HTTP requests: the panel
@@ -42,10 +44,10 @@ type API struct {
 }
 
 func New(a *auth.Service, m *monitoring.Service, d *dashboard.Service, act *activity.Service, s *servers.Service,
-	i *installers.Service, f *files.Service, b *backups.Service, p *players.Service, mt *maintenance.Service, md *mods.Service, ws *wspres.Hub,
+	i *installers.Service, f *files.Service, b *backups.Service, p *players.Service, mt *maintenance.Service, md *mods.Service, mp *modpacks.Service, ws *wspres.Hub,
 	static fs.FS, secureCookie bool, log *slog.Logger) *API {
 	return &API{auth: a, monitoring: m, dashboard: d, activity: act, servers: s, installers: i, files: f, backups: b, players: p,
-		maintenance: mt, mods: md, ws: ws,
+		maintenance: mt, mods: md, modpacks: mp, ws: ws,
 		static: static, secureCookie: secureCookie, log: log}
 }
 
@@ -111,6 +113,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/servers/{id}/world/import", fileRoute(a.importWorld))
 
 	a.modRoutes(mux, fileRoute)
+	a.modpackRoutes(mux, fileRoute)
 
 	mux.HandleFunc("GET /api/v1/ws", a.requireAuth(a.websocket))
 

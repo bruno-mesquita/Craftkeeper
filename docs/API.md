@@ -26,6 +26,7 @@ unless marked *planned*.
 
 | Status | `code` | Meaning |
 |---|---|---|
+| 400 | `curseforge_key_invalid` | CurseForge refused the API key (when saving it, or the stored one) |
 | 400 | `invalid_json` | Body is not one valid JSON object, or has unknown fields |
 | 401 | `unauthenticated` | Missing, expired or revoked session |
 | 401 | `invalid_credentials` | Wrong username/password (never says which) |
@@ -40,11 +41,13 @@ unless marked *planned*.
 | 409 | `container_missing` | The server's container no longer exists; only deletion works |
 | 409 | `container_not_managed` | The container no longer carries this server's labels; the panel refuses to touch it |
 | 409 | `port_in_use` | The game port is taken on the host when starting |
-| 409 | `modpack_server` | The server runs a modpack, whose scripts choose the game version and own its mods |
+| 409 | `modpack_server` | The server runs a modpack (ZIP scripts or a catalog pack), which chooses the game version and owns its mods |
+| 409 | `curseforge_not_configured` | CurseForge needs an API key; none is saved (Settings) |
 | 409 | `mods_unsupported` | The server is vanilla: it has no mod loader |
 | 409 | `mod_incompatible` | A mod to install is declared incompatible with an installed or planned one |
 | 413 | `payload_too_large` | Body over 64 KiB |
 | 422 | `validation_failed` | Field-level validation error |
+| 422 | `modpack_unsupported` | The modpack version needs a loader other than Fabric, Forge or NeoForge, or no Minecraft release |
 | 422 | `invalid_world` | The archive holds no Minecraft world (`level.dat`) |
 | 429 | `rate_limited` | Too many failed logins; retry after the window |
 | 500 | `internal_error` | Unexpected server error (details only in logs) |
@@ -54,6 +57,7 @@ unless marked *planned*.
 | 503 | `installer_unavailable` | An official version source (Mojang, Fabric, Forge, NeoForge) cannot be reached |
 | 503 | `account_lookup_unavailable` | Mojang cannot be reached to look up a player account or skin |
 | 503 | `modrinth_unavailable` | Modrinth cannot be reached, or a downloaded mod failed its size or SHA-512 check |
+| 503 | `curseforge_unavailable` | CurseForge cannot be reached or sent an invalid answer |
 
 ## Objects
 
@@ -197,7 +201,7 @@ its database; other containers on the host are never listed or touched.
   "status": "running", "failure": "",
   "memory_mb": 2048, "cpu_cores": 1.5, "port": 25601,
   "container_id": "64-char hex", "created_at": "...", "updated_at": "...",
-  "crash": null
+  "crash": null, "modpack": null
 }
 ```
 `status` is read from Docker on every request, never stored:
@@ -212,6 +216,9 @@ whose creation did not finish are removed when the panel restarts.
 `loader` is `vanilla`, `fabric`, `forge` or `neoforge`. `version` is the Minecraft release
 (`"LATEST"` only for vanilla: it follows the newest release on every start). `loader_version`
 is the exact loader build installed (empty for vanilla); it never changes by itself.
+`modpack` is the catalog modpack the server runs, or `null` (see Modpacks):
+`{"source": "modrinth"|"curseforge", "project_id", "slug", "version_id", "name", "version_name"}`.
+The pack then sets `loader` and `version`, and `loader_version` is empty (the pack pins it).
 
 **Crash loop.** Containers restart by themselves after a crash (`unless-stopped`). When the
 restart policy restarts a server's container 3 times within 10 minutes, the panel stops it,
@@ -229,7 +236,7 @@ An `{id}` that is not a valid server ID answers `404 not_found` without any look
 list is still returned, with status `unknown`.
 
 ### `POST /servers` — auth + CSRF
-Body: `{"name", "description"?, "loader"?, "version"?, "loader_version"?, "memory_mb", "cpu_cores", "port"?, "accept_eula", "start"?}`.
+Body: `{"name", "description"?, "loader"?, "version"?, "loader_version"?, "modpack"?, "memory_mb", "cpu_cores", "port"?, "accept_eula", "start"?}`.
 - `name`: 1–48 printable characters, no surrounding spaces, unique (case-insensitive).
 - `description`: up to 500 characters.
 - `loader`: `vanilla` (default), `fabric`, `forge` or `neoforge`.
@@ -241,6 +248,12 @@ Body: `{"name", "description"?, "loader"?, "version"?, "loader_version"?, "memor
 - `port`: within the configured game port range; omitted or `0` picks the first free one.
 - `accept_eula`: must be `true` (the Minecraft EULA).
 - `start`: `true` starts the server as soon as its container exists. Default `false`.
+- `modpack`: `{"source", "project_id", "version_id"}`, a version listed by
+  `GET /modpacks/{source}/{project}/versions`. It replaces `loader`, `version` and
+  `loader_version` (sending any of them is `422`): the panel reads the version from its catalog
+  and the game image downloads and installs the pack on the first start (follow it in the
+  console). `404` (unknown project or version) · `409 curseforge_not_configured` · `422
+  modpack_unsupported` · `400 curseforge_key_invalid` · `503 modrinth_unavailable|curseforge_unavailable`.
 
 The input, the port and (for modded servers) the official version lists (cached for 1 hour) are
 checked before answering; the server is then recorded and returned with status `creating`.
@@ -683,11 +696,70 @@ missing). Audit `mod.enable` / `mod.disable` (target `<server name>: <file befor
 ### `DELETE /servers/{id}/mods/files/{file}` — auth + CSRF
 Deletes the mod file. `204` · `404 not_found` · `422 validation_failed`. Audit `mod.remove`.
 
-### `GET /mods/icons/{project_id}` — auth
+### `GET /mods/icons/{project_id}` — auth (Modrinth packs use `GET /modpacks/modrinth/{id}/icon`)
 The project's icon, fetched from `cdn.modrinth.com` (the client never passes a URL). Only
 PNG, JPEG, GIF and WebP up to 256 KiB. `200` with the sniffed type and `Cache-Control:
 private, max-age=86400` · `404 not_found` (no icon, or not a raster image) · `422
 validation_failed` · `503 modrinth_unavailable`.
+
+## Modpacks
+
+Modpacks from **Modrinth** (no key) and **CurseForge** (needs an API key, see Settings) for a new
+server (`POST /servers` with `modpack`). Only packs whose version runs Fabric, Forge or NeoForge
+on a Minecraft release are offered. The panel only reads the catalogs: the game image
+(`TYPE=MODRINTH` / `TYPE=AUTO_CURSEFORGE`) downloads the pack, installs its loader and files on
+start, and when the pack version changes removes the previous version's files; the world is
+never touched. Some CurseForge mods forbid downloads by third parties: the console lists them,
+and the user uploads them to `downloads/` (Files) and starts the server again. A catalog pack
+server has no Mods API (`409 modpack_server`) and no `POST /version` (`409 modpack_server`).
+
+**ModpackVersion**: `{"id", "name", "type": "release"|"beta"|"alpha", "published_at",
+"loader", "game_version"}`. Lists are newest first.
+
+### `GET /modpacks/search?source=modrinth|curseforge&q=&offset=` — auth
+`200 {"hits": [Project], "offset", "total"}` with `Project` as in Mods search (`id` is the
+Modrinth project ID or the CurseForge mod ID; `server_side` is always `required` for
+CurseForge). Most relevant first, or most downloaded/popular with an empty `q`. Pages of 20.
+`422 validation_failed` (`source`, `q` over 100 characters, `offset` outside 0–9900) · `409
+curseforge_not_configured` · `400 curseforge_key_invalid` · `503`.
+
+### `GET /modpacks/{source}/{project}/versions` — auth
+`200 {"versions": [ModpackVersion]}`. CurseForge server packs and unavailable files are left
+out (the game image installs from the regular pack file; at most the 50 newest files are read).
+`404` · `409 curseforge_not_configured` · `422 validation_failed` · `503`.
+
+### `GET /modpacks/{source}/{project}/icon` — auth
+The pack's icon from `cdn.modrinth.com` or `media.forgecdn.net`, with the same rules and
+answers as `GET /mods/icons/{project_id}`.
+
+### `GET /servers/{id}/modpack/versions` — auth
+`200 {"modpack": {…}, "versions": [ModpackVersion]}` for a server with a catalog pack · `404`
+(no catalog pack) · errors as above.
+
+### `POST /servers/{id}/modpack/version` — auth + CSRF
+Body `{"version_id"}`: another version of the server's pack. The server must be stopped; a full
+backup is made first (as for `POST /version`), then the container is replaced with one for the
+new version (same port, limits and files). The new version is installed on the next start; the
+world is kept. A newer pack may need a newer Minecraft version (the world is upgraded by the
+game); an older one may not load the world: the backup lets the user go back. `200 Server` ·
+`404` (no catalog pack, or a version of another project) · `409
+server_running|server_busy|curseforge_not_configured` · `422` (same version, invalid ID,
+`modpack_unsupported`) · `500 backup_failed` · `503`. Audit `modpack.update` (target
+`<server name>: <pack> <old version> → <new version>`).
+
+## Settings
+
+### `GET /settings/curseforge` — auth
+`200 {"configured": bool, "hint": "last 4 characters"|""}`. The key itself is never returned.
+
+### `PUT /settings/curseforge` — auth + CSRF
+Body `{"api_key"}` (printable ASCII, no spaces, ≤ 128). The panel checks it with CurseForge
+before saving it. `200` as `GET` · `400 curseforge_key_invalid` · `422 validation_failed` ·
+`503 curseforge_unavailable`. Audit `settings.curseforge_key` (target `set`).
+
+### `DELETE /settings/curseforge` — auth + CSRF
+Forgets the key. `204`. Audit `settings.curseforge_key` (target `removed`). Containers created
+before keep the key in their environment until they are recreated (a pack update).
 
 ## WebSocket
 

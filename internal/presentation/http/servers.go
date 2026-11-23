@@ -15,22 +15,33 @@ import (
 const stopDeadline = 3 * time.Minute // graceful stop (60 s) + removal, with margin
 
 type serverDTO struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	Description   string    `json:"description"`
-	Game          string    `json:"game"`
-	Loader        string    `json:"loader"`
-	Version       string    `json:"version"`
-	LoaderVersion string    `json:"loader_version"`
-	Status        string    `json:"status"`
-	Failure       string    `json:"failure"`
-	MemoryMB      int       `json:"memory_mb"`
-	CPUCores      float64   `json:"cpu_cores"`
-	Port          int       `json:"port"`
-	ContainerID   string    `json:"container_id"`
-	CreatedAt     string    `json:"created_at"`
-	UpdatedAt     string    `json:"updated_at"`
-	Crash         *crashDTO `json:"crash"`
+	ID            string      `json:"id"`
+	Name          string      `json:"name"`
+	Description   string      `json:"description"`
+	Game          string      `json:"game"`
+	Loader        string      `json:"loader"`
+	Version       string      `json:"version"`
+	LoaderVersion string      `json:"loader_version"`
+	Status        string      `json:"status"`
+	Failure       string      `json:"failure"`
+	MemoryMB      int         `json:"memory_mb"`
+	CPUCores      float64     `json:"cpu_cores"`
+	Port          int         `json:"port"`
+	ContainerID   string      `json:"container_id"`
+	CreatedAt     string      `json:"created_at"`
+	UpdatedAt     string      `json:"updated_at"`
+	Crash         *crashDTO   `json:"crash"`
+	Modpack       *modpackDTO `json:"modpack"`
+}
+
+// modpackDTO is the catalog modpack a server runs. Null when there is none.
+type modpackDTO struct {
+	Source      string `json:"source"`
+	ProjectID   string `json:"project_id"`
+	Slug        string `json:"slug"`
+	VersionID   string `json:"version_id"`
+	Name        string `json:"name"`
+	VersionName string `json:"version_name"`
 }
 
 // crashDTO is the crash loop record of a server: when the panel stopped it and after how
@@ -45,8 +56,16 @@ func toServerDTO(v servers.View) serverDTO {
 		ID: v.ID, Name: v.Name, Description: v.Description, Game: v.Game, Loader: v.Loader, Version: v.Version,
 		LoaderVersion: v.LoaderVersion, Status: string(v.Status), Failure: v.Failure, MemoryMB: v.MemoryMB, CPUCores: float64(v.CPUMillicores) / 1000, Port: v.Port,
 		ContainerID: v.ContainerID, CreatedAt: rfc3339(v.CreatedAt), UpdatedAt: rfc3339(v.UpdatedAt),
-		Crash: toCrashDTO(v.Server),
+		Crash: toCrashDTO(v.Server), Modpack: toModpackDTO(v.Modpack),
 	}
+}
+
+func toModpackDTO(m domain.ModpackRef) *modpackDTO {
+	if !m.Set() {
+		return nil
+	}
+	return &modpackDTO{Source: m.Source, ProjectID: m.ProjectID, Slug: m.Slug, VersionID: m.VersionID,
+		Name: m.Name, VersionName: m.VersionName}
 }
 
 func toCrashDTO(x domain.Server) *crashDTO {
@@ -102,21 +121,43 @@ func (a *API) listServers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"servers": out})
 }
 
+// modpackRequest selects a catalog modpack version for a new server.
+type modpackRequest struct {
+	Source    string `json:"source"`
+	ProjectID string `json:"project_id"`
+	VersionID string `json:"version_id"`
+}
+
 func (a *API) createServer(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name          string  `json:"name"`
-		Description   string  `json:"description"`
-		Loader        string  `json:"loader"`
-		Version       string  `json:"version"`
-		LoaderVersion string  `json:"loader_version"`
-		MemoryMB      int     `json:"memory_mb"`
-		CPUCores      float64 `json:"cpu_cores"`
-		Port          int     `json:"port"`
-		AcceptEULA    bool    `json:"accept_eula"`
-		Start         bool    `json:"start"`
+		Name          string          `json:"name"`
+		Description   string          `json:"description"`
+		Loader        string          `json:"loader"`
+		Version       string          `json:"version"`
+		LoaderVersion string          `json:"loader_version"`
+		MemoryMB      int             `json:"memory_mb"`
+		CPUCores      float64         `json:"cpu_cores"`
+		Port          int             `json:"port"`
+		AcceptEULA    bool            `json:"accept_eula"`
+		Start         bool            `json:"start"`
+		Modpack       *modpackRequest `json:"modpack"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
+	}
+	var pack domain.ModpackRef
+	if m := req.Modpack; m != nil {
+		// The pack sets the game: the catalog says which loader and Minecraft version it runs.
+		if req.Loader != "" || req.Version != "" || req.LoaderVersion != "" {
+			writeDomainError(w, a.log, &domain.ValidationError{Field: "modpack", Message: "replaces loader, version and loader_version"})
+			return
+		}
+		ref, game, err := a.modpacks.Resolve(r.Context(), m.Source, m.ProjectID, m.VersionID)
+		if err != nil {
+			writeDomainError(w, a.log, err)
+			return
+		}
+		pack, req.Loader, req.Version = ref, game.Loader, game.Version
 	}
 	if req.Loader == "" {
 		req.Loader = domain.LoaderVanilla
@@ -128,7 +169,7 @@ func (a *API) createServer(w http.ResponseWriter, r *http.Request) {
 		Name: req.Name, Description: req.Description, Loader: req.Loader, Version: req.Version,
 		LoaderVersion: req.LoaderVersion, MemoryMB: req.MemoryMB,
 		CPUMillicores: millicores(req.CPUCores), Port: req.Port, AcceptEULA: req.AcceptEULA,
-		Start: req.Start,
+		Start: req.Start, Modpack: pack,
 	}, actorOf(r))
 	if err != nil {
 		writeDomainError(w, a.log, err)

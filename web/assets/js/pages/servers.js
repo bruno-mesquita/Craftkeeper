@@ -7,6 +7,7 @@ import { confirmDialog, openDialog } from '../dialog.js';
 import { clearFormError, field, formValues, h, showFormError, toast } from '../dom.js';
 import { bytes, percent } from '../format.js';
 import { serverIcon } from '../icon-manager.js';
+import { SOURCES, packIcon, pickModpack } from '../modpack-browser.js';
 import { mountModpackManager } from '../modpack-manager.js';
 import { versionFields } from '../version-fields.js';
 import { detectModpack } from '../modpack-zip.js';
@@ -197,10 +198,13 @@ export function mount(root) {
     const packField = field('Modpack server pack ZIP (optional)', packInput);
     const packStatus = h('p', { class: 'text-xs text-muted', role: 'status', hidden: true });
     let detected = null; // what the chosen pack's variables.txt declares
+    let catalog = null; // modpack chosen on Modrinth or CurseForge: { source, project, version }
+    const browseBtn = h('button', { class: 'btn btn-ghost self-start', type: 'button' }, 'Search Modrinth or CurseForge…');
+    const catalogChoice = h('div', { class: 'flex min-w-0 items-center gap-3 rounded-md border border-border p-3', hidden: true });
     const moddedHint = h('p', { class: 'text-xs text-muted', hidden: true },
       'Mod loaders need more memory (4 GB or more for most modpacks). Forge and NeoForge install on the first start, which takes a few minutes. Add mods to the mods folder in the Files tab.');
     const versions = versionFields({
-      onBusy: (busy) => { if (!detected) button.disabled = busy; },
+      onBusy: (busy) => { if (!detected && !catalog) button.disabled = busy; },
       onLoader: (kind) => {
         const modded = kind !== 'vanilla';
         moddedHint.hidden = !modded;
@@ -212,6 +216,9 @@ export function mount(root) {
     const form = h('form', { class: 'flex flex-col gap-4', novalidate: true },
       field('Name', h('input', { class: 'input', name: 'name', required: true, maxlength: '48', autocomplete: 'off' })),
       field('Description', h('input', { class: 'input', name: 'description', maxlength: '500', autocomplete: 'off' })),
+      h('div', { class: 'flex flex-col gap-2' },
+        h('span', { class: 'text-sm font-medium' }, 'Modpack (optional)'),
+        browseBtn, catalogChoice),
       packField,
       packStatus,
       manual,
@@ -225,6 +232,35 @@ export function mount(root) {
       h('p', { class: 'text-xs text-muted' }, 'The first server of each Java version downloads its game image, which can take a few minutes.'),
       h('p', { class: 'form-error', 'data-error': true, role: 'alert', hidden: true }),
       h('div', { class: 'flex justify-end gap-2' }, cancel, button));
+
+    // A catalog modpack sets the game: the type, version and ZIP fields are hidden.
+    const showCatalog = () => {
+      catalogChoice.hidden = !catalog;
+      browseBtn.hidden = Boolean(catalog);
+      packField.hidden = Boolean(catalog);
+      manual.hidden = Boolean(catalog) || Boolean(detected);
+      button.disabled = false;
+      if (!catalog) return;
+      const { source, project, version } = catalog;
+      const remove = h('button', { class: 'btn btn-ghost px-2 py-1 text-xs', type: 'button', onclick: () => { catalog = null; showCatalog(); } }, 'Remove');
+      const change = h('button', { class: 'btn btn-ghost px-2 py-1 text-xs', type: 'button', onclick: browse }, 'Change');
+      catalogChoice.replaceChildren(packIcon(source, project),
+        h('div', { class: 'min-w-0 flex-1' },
+          h('p', { class: 'truncate font-medium' }, project.title),
+          h('p', { class: 'truncate text-xs text-muted' }, `${SOURCES[source]} · ${version.name} · ${LOADERS[version.loader]} ${version.game_version}`)),
+        change, remove);
+      if (Number(memory.value) < 6144) memory.value = '6144';
+    };
+    async function browse() {
+      const choice = await pickModpack();
+      if (!choice) return;
+      catalog = choice;
+      packInput.value = '';
+      detected = null;
+      packStatus.hidden = true;
+      showCatalog();
+    }
+    browseBtn.addEventListener('click', browse);
 
     packInput.addEventListener('change', async () => {
       const pack = packInput.files?.[0];
@@ -251,6 +287,21 @@ export function mount(root) {
     cancel.addEventListener('click', close);
     form.querySelector('[name="name"]').focus();
     submitForm(form, button, 'Creating…', async (v) => {
+      if (catalog) {
+        // The game image downloads and installs the pack on the first start.
+        const created = await api('POST', '/servers', {
+          name: v.name.trim(),
+          description: v.description.trim(),
+          modpack: { source: catalog.source, project_id: catalog.project.id, version_id: catalog.version.id },
+          memory_mb: Number(v.memory_mb),
+          cpu_cores: Number(v.cpu_cores),
+          port: v.port ? Number(v.port) : 0,
+          accept_eula: v.accept_eula === 'on',
+          start: true,
+        });
+        toast(`${created.name} is being created on port ${created.port}. It installs ${catalog.project.title} on its first start; follow it in the console.`, 'success');
+        return;
+      }
       const pack = form.querySelector('[name="modpack"]').files?.[0];
       // The panel answers at once and builds the server in the background (status
       // "creating"). Without a modpack it starts by itself when ready; with one, the

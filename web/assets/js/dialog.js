@@ -5,10 +5,11 @@ import { h } from './dom.js';
 let counter = 0;
 
 // openDialog renders a modal and returns { dialog, close }. The dialog is removed from the
-// DOM when it closes (button, Esc or close()); onClose runs once at that point.
-export function openDialog({ title, content, onClose }) {
+// DOM when it closes (button, Esc or close()); onClose runs once at that point. `wide` fits
+// lists (up to 48rem instead of 32rem).
+export function openDialog({ title, content, onClose, wide = false }) {
   const titleId = `dlg-title-${++counter}`;
-  const dialog = h('dialog', { class: 'dialog', 'aria-labelledby': titleId },
+  const dialog = h('dialog', { class: wide ? 'dialog dialog-wide' : 'dialog', 'aria-labelledby': titleId },
     h('h2', { id: titleId, class: 'mb-4 text-base font-semibold' }, title),
     content);
   dialog.addEventListener('close', () => {

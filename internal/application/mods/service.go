@@ -416,6 +416,8 @@ func (s *Service) server(ctx context.Context, id string) (servers.View, error) {
 		return servers.View{}, domain.ErrServerBusy
 	case !domain.Modded(srv.Loader):
 		return servers.View{}, domain.ErrModsUnsupported
+	case srv.Modpack.Set():
+		return servers.View{}, domain.ErrModpackServer
 	}
 	if _, err := s.files.Stat(id, domain.ModpackConfigFile); err == nil {
 		return servers.View{}, domain.ErrModpackServer

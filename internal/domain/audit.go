@@ -69,6 +69,11 @@ const (
 	AuditModRemove  = "mod.remove"
 	AuditModEnable  = "mod.enable"
 	AuditModDisable = "mod.disable"
+
+	// AuditModpackUpdate targets "<server name>: <pack> <old version> → <new version>".
+	AuditModpackUpdate = "modpack.update"
+	// AuditCurseForgeKey records saving ("set") or removing ("removed") the CurseForge API key.
+	AuditCurseForgeKey = "settings.curseforge_key"
 )
 
 // AuditActions lists every action, in display order. Filters only accept these.
@@ -77,7 +82,7 @@ var AuditActions = []string{
 	AuditServerCreate, AuditServerUpdate, AuditServerStart, AuditServerStop, AuditServerRestart,
 	AuditServerKill, AuditServerDelete, AuditServerCrashLoop, AuditServerVersionChange, AuditServerMigrate, AuditConsoleCommand,
 	AuditWorldReset, AuditWorldImport,
-	AuditContainerDelete, AuditModpackConfigure, AuditModpackInstall,
+	AuditContainerDelete, AuditModpackConfigure, AuditModpackInstall, AuditModpackUpdate, AuditCurseForgeKey,
 	AuditFileUpload, AuditFileWrite, AuditFileMkdir, AuditFileRename, AuditFileDelete, AuditFileExtract,
 	AuditBackupCreate, AuditBackupRestore, AuditBackupDelete, AuditBackupSchedule,
 	AuditWhitelistToggle, AuditWhitelistAdd, AuditWhitelistRemove,

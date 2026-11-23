@@ -11,6 +11,7 @@ import { mountBackupManager } from '../backup-manager.js';
 import { mountFileManager } from '../file-manager.js';
 import { mountIconManager, serverIcon } from '../icon-manager.js';
 import { mountModManager } from '../mod-manager.js';
+import { mountModpackCard } from '../modpack-browser.js';
 import { filterLines, listLogs, matchesLine, readLog } from '../log-viewer.js';
 import { mountPlayerManager } from '../player-manager.js';
 import { mountPropertiesManager } from '../properties-manager.js';
@@ -104,7 +105,7 @@ export function mount(root, { param: id }) {
   const worldPanel = h('section', { class: 'card', id: 'panel-world', role: 'tabpanel', 'aria-labelledby': 'tab-world', hidden: true });
   let world = null; // game version and world tools, mounted on first use
   const modsPanel = h('section', { class: 'card', id: 'panel-mods', role: 'tabpanel', 'aria-labelledby': 'tab-mods', hidden: true });
-  let mods = null; // Modrinth mods, mounted on first use
+  let mods = null; // Modrinth mods (or the catalog modpack card), mounted on first use
   const activityPanel = h('section', { class: 'card', id: 'panel-activity', role: 'tabpanel', 'aria-labelledby': 'tab-activity', hidden: true });
   let activity = null; // this server's audit events, mounted on first use
 
@@ -167,10 +168,9 @@ export function mount(root, { param: id }) {
       world.refresh();
     }
     if (name === 'mods' && !mods) {
-      mods = mountModManager(modsPanel, { id, onRestart: () => act('restart') });
-      if (server) mods.setStatus(server.status);
+      mountMods();
     } else if (name === 'mods') {
-      mods.refresh();
+      mods.refresh?.();
     }
     if (name === 'activity') {
       if (!activity) activity = mountActivity(activityPanel, { serverId: id });
@@ -251,8 +251,22 @@ export function mount(root, { param: id }) {
     world?.setServer(server);
     // Vanilla has no mod loader (a modpack server is explained inside the tab).
     tabButtons.mods.hidden = server.loader === 'vanilla';
+    tabButtons.mods.textContent = server.modpack ? 'Modpack' : 'Mods';
     if (tabButtons.mods.hidden && !modsPanel.hidden) showTab('console');
     mods?.setStatus(server.status);
+  }
+
+  // mountMods shows the server's catalog modpack, whose version can be changed, or its mods.
+  function mountMods() {
+    if (server?.modpack) {
+      mods = mountModpackCard(modsPanel, {
+        server,
+        onUpdated: (view) => { server = view; renderHeader(); mountMods(); },
+      });
+    } else {
+      mods = mountModManager(modsPanel, { id, onRestart: () => act('restart') });
+    }
+    if (server) mods.setStatus(server.status);
   }
 
   async function act(action) {

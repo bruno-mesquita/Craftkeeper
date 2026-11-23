@@ -44,6 +44,7 @@ runtime, repositories, version sources and the WebSocket adapter.
 | File manager | `files` | `filesystem` (`os.Root`, zip) | `http` |
 | Backups | `backups` | `filesystem` (zip, staging), `sqlite` | `http` |
 | Mods (Modrinth) | `mods` | `modrinth` (API + CDN over HTTPS, SHA-512 check), `filesystem` | `http` |
+| Modpacks (Modrinth, CurseForge) | `modpacks` (+ `maintenance.ChangeModpack`, `servers.ChangeModpack`) | `modrinth`, `curseforge` (metadata over HTTPS), `sqlite` (settings: CurseForge key) | `http` |
 | Shared short cache | `ttlcache` | — | — |
 
 ### Docker

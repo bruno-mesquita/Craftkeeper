@@ -20,6 +20,7 @@ type Servers interface {
 	Get(ctx context.Context, id string) (servers.View, error)
 	ResolveVersion(ctx context.Context, in servers.VersionInput) (string, error)
 	ChangeVersion(ctx context.Context, id string, in servers.VersionInput, actor servers.Actor) (servers.View, error)
+	ChangeModpack(ctx context.Context, id string, ref domain.ModpackRef, game servers.VersionInput, actor servers.Actor) (servers.View, error)
 }
 
 // Backups makes the backup that protects each change (backups.Service).
@@ -58,8 +59,10 @@ func NewService(srv Servers, b Backups, f Files, audit AuditRecorder) *Service {
 // ChangeVersion backs a stopped server up and makes it run another Minecraft version and/or
 // loader. Servers that run a modpack are refused: the pack's scripts choose the version.
 func (s *Service) ChangeVersion(ctx context.Context, id string, in servers.VersionInput, actor servers.Actor) (servers.View, error) {
-	if _, err := s.stopped(ctx, id); err != nil {
+	if v, err := s.stopped(ctx, id); err != nil {
 		return servers.View{}, err
+	} else if v.Modpack.Set() {
+		return servers.View{}, domain.ErrModpackServer
 	}
 	if _, err := s.files.Stat(id, domain.ModpackConfigFile); err == nil {
 		return servers.View{}, domain.ErrModpackServer
@@ -74,6 +77,25 @@ func (s *Service) ChangeVersion(ctx context.Context, id string, in servers.Versi
 	err := s.backups.Protect(ctx, id, actor, func(ctx context.Context) error {
 		var err error
 		v, err = s.servers.ChangeVersion(ctx, id, in, actor)
+		return err
+	})
+	return v, err
+}
+
+// ChangeModpack backs a stopped server that runs a catalog modpack up and makes it run another
+// version of that pack (ref, resolved from the catalog with the game it runs). The world is
+// kept: the game image only replaces the files of the previous pack version.
+func (s *Service) ChangeModpack(ctx context.Context, id string, ref domain.ModpackRef, game servers.VersionInput, actor servers.Actor) (servers.View, error) {
+	v, err := s.stopped(ctx, id)
+	if err != nil {
+		return servers.View{}, err
+	}
+	if !v.Modpack.Set() || v.Modpack.Source != ref.Source || v.Modpack.ProjectID != ref.ProjectID {
+		return servers.View{}, domain.ErrNotFound // not this server's modpack
+	}
+	err = s.backups.Protect(ctx, id, actor, func(ctx context.Context) error {
+		var err error
+		v, err = s.servers.ChangeModpack(ctx, id, ref, game, actor)
 		return err
 	})
 	return v, err

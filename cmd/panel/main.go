@@ -24,11 +24,13 @@ import (
 	"github.com/bruno-mesquita/Craftkeeper/internal/application/files"
 	"github.com/bruno-mesquita/Craftkeeper/internal/application/installers"
 	"github.com/bruno-mesquita/Craftkeeper/internal/application/maintenance"
+	"github.com/bruno-mesquita/Craftkeeper/internal/application/modpacks"
 	"github.com/bruno-mesquita/Craftkeeper/internal/application/mods"
 	"github.com/bruno-mesquita/Craftkeeper/internal/application/monitoring"
 	"github.com/bruno-mesquita/Craftkeeper/internal/application/players"
 	"github.com/bruno-mesquita/Craftkeeper/internal/application/servers"
 	"github.com/bruno-mesquita/Craftkeeper/internal/config"
+	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/curseforge"
 	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/docker"
 	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/filesystem"
 	"github.com/bruno-mesquita/Craftkeeper/internal/infrastructure/gameversions"
@@ -106,10 +108,11 @@ func run() error {
 	uid, gid := containerUser(log)
 	containers := docker.NewRuntime(dockerClient, uid, gid)
 	installersSvc := installers.NewService(gameversions.New(gameversions.Official), versionsTTL)
+	settings := sqlite.NewSettings(store)
 	serversSvc := servers.NewService(sqlite.NewServers(store), containers,
 		filesystem.NewServerDirs(cfg.ServersDir(), cfg.BackupsDir(), uid, gid), installersSvc, auditLog, servers.Config{
 			FirstPort: cfg.GamePorts.First, LastPort: cfg.GamePorts.Last,
-			HostCPUs: runtime.NumCPU(), PortFree: hostnet.TCPPortFree,
+			HostCPUs: runtime.NumCPU(), PortFree: hostnet.TCPPortFree, CurseForgeKey: settings.CurseForgeKey,
 		})
 	// Before serving: forget creations a previous run did not finish. Creations started from
 	// now on run in the background and are interrupted (then recovered) at shutdown.
@@ -164,10 +167,13 @@ func run() error {
 	}()
 
 	maintenanceSvc := maintenance.NewService(serversSvc, backupsSvc, serverFiles, auditLog)
-	modsSvc := mods.NewService(modrinth.New(modrinth.Official), serverFiles, serversSvc, backupsSvc, auditLog)
+	modrinthClient := modrinth.New(modrinth.Official)
+	modsSvc := mods.NewService(modrinthClient, serverFiles, serversSvc, backupsSvc, auditLog)
+	modpacksSvc := modpacks.NewService(modrinthClient, curseforge.New(curseforge.Official), settings, serversSvc,
+		maintenanceSvc, auditLog)
 
 	handler := httpapi.New(authSvc, monitoringSvc, dashboardSvc, activity.NewService(auditLog), serversSvc, installersSvc,
-		filesSvc, backupsSvc, playersSvc, maintenanceSvc, modsSvc, hub, web.FS, cfg.SecureCookie, log).Handler()
+		filesSvc, backupsSvc, playersSvc, maintenanceSvc, modsSvc, modpacksSvc, hub, web.FS, cfg.SecureCookie, log).Handler()
 	return serve(ctx, log, cfg.Listen, handler, hub)
 }
 

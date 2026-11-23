@@ -46,6 +46,11 @@ var (
 	ErrModsUnsupported     = errors.New("the server has no mod loader")
 	ErrModIncompatible     = errors.New("the mod is incompatible with an installed mod")
 	ErrModrinthUnavailable = errors.New("Modrinth unavailable")
+
+	ErrModpackUnsupported      = errors.New("the modpack version uses a loader or game version the panel cannot run")
+	ErrCurseForgeNotConfigured = errors.New("no CurseForge API key is configured")
+	ErrCurseForgeKeyInvalid    = errors.New("CurseForge refused the API key")
+	ErrCurseForgeUnavailable   = errors.New("CurseForge unavailable")
 )
 
 // ValidationError describes which input field is invalid. It wraps ErrInvalidInput.

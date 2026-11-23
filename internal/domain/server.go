@@ -20,13 +20,16 @@ type Server struct {
 	Game          string
 	Loader        string // see Loader* in installer.go
 	Version       string // "LATEST" (vanilla only) or a release such as "1.21.4"
-	LoaderVersion string // exact loader version; empty for vanilla
+	LoaderVersion string // exact loader version; empty for vanilla and catalog modpacks
 	MemoryMB      int
 	CPUMillicores int // 1000 = one core
 	Port          int // host TCP port of the game
 	ContainerID   string
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+
+	// The catalog modpack the server runs (zero for none). It sets Loader and Version.
+	Modpack ModpackRef
 
 	// Set when the panel stopped the server because it kept crashing (crash loop); cleared by
 	// the next start or restart through the panel.

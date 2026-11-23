@@ -99,6 +99,8 @@ Formato: decisão — motivo — consequência.
 - **D10 · systemd com usuário dedicado `craftkeeper`** — princípio do menor privilégio. — Precisa estar no grupo `docker` (root-equivalente) a partir da Fase 3; criação do usuário e grupo exige autorização no deploy.
 - **D69 · Renomeado para Craftkeeper** (escolha do usuário, 2026-11-20) — o repo/README já se chamavam Craftkeeper. Módulo `github.com/bruno-mesquita/Craftkeeper`; binário, unit, usuário, `/opt|/etc|/var/lib/craftkeeper`. Runtime: labels `craftkeeper.managed/server_id/game`, container `craftkeeper-<id>`, marcadores `domain.Modpack{Config,Installed,Supported}File` = `.craftkeeper-modpack{,-installed,-supported}`, temporários `.craftkeeper-tmp-*`, cookie `craftkeeper_session`. A migração dos containers `mesquita.*` (recriação via `servers.swapContainer`, extraído da D60) rodou uma vez e o único container legado foi migrado e verificado pelo usuário (2026-11-21); a compatibilidade foi **removida** em seguida — labels e marcadores `mesquita*` não são mais reconhecidos. `AuditServerMigrate` (`server.migrate`) fica só para as linhas antigas do audit. Decisões antigas citam os nomes `mesquita*` como histórico.
 - **D70 · Deploy por script local `sudo make deploy`** (escolha do usuário, 2026-11-20) — repo público: runner self-hosted rodaria código de PR na produção; push pelo CI exigiria chave root no GitHub. — `deployments/deploy.sh` só faz upgrade (recusa sem root/unit/binário): `make check` (falha → nada muda) → stop → backup frio do SQLite + binário em `/var/backups/craftkeeper/<UTC>-<rev>/` (5 mais novos) → install → start → `/api/v1/health` por 30 s → senão rollback de binário **e** banco + `journalctl`. `SKIP_BUILD=1`, `HEALTH_URL`. Saída em `.cache/deploy.log`. Primeira instalação segue manual (INSTALL.md §1–8b, autorização).
+- **D71 · Modpacks de catálogo instalados pelo itzg** (pedido do usuário, 2026-11-21: Modrinth + CurseForge, só na criação, update preservando o mundo) — a imagem já instala e atualiza packs (`TYPE=MODRINTH` + `MODRINTH_MODPACK`/`MODRINTH_VERSION`; `TYPE=AUTO_CURSEFORGE` + `CF_API_KEY`/`CF_SLUG`/`CF_FILE_ID`, `CF_DOWNLOADS_REPO=/data/downloads` para mods bloqueados) e, ao trocar a versão, remove só os arquivos do pack antigo (mundo nunca). — O painel só lê metadados: `domain.ModpackRef` no servidor (migration `0007`), loader/MC vindos do catálogo (só fabric/forge/neoforge em release, `ModpackGame`), `loader_version` vazio. Update = `maintenance.ChangeModpack` (parado + `backups.Protect` sempre) → `servers.ChangeModpack` (recria via `replaceContainer`/`swapContainer`, D60). Servidor de pack: sem aba Mods/`POST /version` (`modpack_server`). Nomes das env vars conferidos na doc do itzg (2026-11-21).
+- **D72 · API key do CurseForge em Settings** (escolha do usuário, 2026-11-21) — busca/instalação no CurseForge exige key. — Tabela `settings` (`curseforge_api_key`, `sqlite.Settings`), validada com `GET /v1/games/432` antes de gravar; API devolve só `configured` + 4 últimos chars; vai no env do container (`servers.Config.CurseForgeKey`). Trocar/remover a key só afeta containers recriados depois. Novo cliente `infrastructure/curseforge` (sem dependência nova).
 
 ---
 
@@ -132,6 +134,7 @@ Formato: decisão — motivo — consequência.
 | 10 | Tarefas agendadas + webhook Discord | ⏸️ opcional (pulada a pedido do usuário, 2026-11-18) | ver "Roadmap pós-Fase 7" abaixo |
 | 11 | Trocar versão/loader, mundos, operadores | ✅ implementada, testada e verificada (2026-11-18) | ver Fase 11 abaixo |
 | 12 | Mods via Modrinth | 🚧 implementada e testada (`make check` ok); falta verificação real (2026-11-19) | ver Fase 12 abaixo |
+| 12.1 | Modpacks do Modrinth/CurseForge (busca, criação, update) | 🚧 implementada e testada (`make check` ok); falta verificação real (2026-11-21) | ver "Modpacks de catálogo" abaixo |
 | 13–14 | Roadmap pós-Fase 7 (features) | 📋 planejadas (2026-11-18) | ver "Roadmap pós-Fase 7" abaixo |
 
 Legenda de detalhe por feature (preencher ao implementar): **implementado** / **testado** / **planejado**.
@@ -496,3 +499,27 @@ Plano: `~/.claude/plans/mellow-humming-hennessy.md`. Decisões D64–D67.
 - **Testado:** `sudo make check` passou (2026-11-19, inclusive após backup opcional no update; binário 14,1 MB). Diálogo de instalação conferido no navegador pelo usuário.
 - **Pendente:** roteiro manual com servidor Fabric real (ver plano).
 
+## Modpacks de catálogo — Modrinth + CurseForge (2026-11-21)
+
+Plano: `~/.claude/plans/eu-preciso-de-um-cached-patterson-of-02e2661f-61c7-47db-a605-8a8505f00da0.md`. Decisões D71–D72.
+- **Implementado:** `domain/modpack.go` (`ModpackRef`, `ModpackVersion`, validações, `ModpackGame`),
+  erros `modpack_unsupported`/`curseforge_not_configured`/`curseforge_key_invalid`/`curseforge_unavailable`,
+  audit `modpack.update`/`settings.curseforge_key`; migration `0007_server_modpack`; `sqlite.Settings`;
+  `modrinth.SearchModpacks` (+ `ProjectVersions` sem filtro); `infrastructure/curseforge`;
+  `servers` (`minecraftEnv` com pack, `CreateInput.Modpack`, `ChangeModpack`, `containerEnv`);
+  `maintenance.ChangeModpack`; `application/modpacks` (Search, Versions, Resolve, ServerVersions,
+  Update, key, ícones); rotas `presentation/http/modpacks.go` + `modpack` em `POST /servers` e no
+  Server. Frontend: `modpack-browser.js` (picker com abas Modrinth/CurseForge no "New server",
+  card "Modpack" na aba Mods com Update + aviso de downgrade), seção CurseForge em Settings,
+  rótulos no Activity. `make css` regenerado. Docs: API.md (Modpacks, Settings, erros),
+  SECURITY.md, ARCHITECTURE.md.
+- **Testes escritos:** `domain/modpack_test.go`, `servers/modpack_test.go` (env, criação, troca,
+  recusas), `maintenance` (`TestChangeModpack`), `curseforge/client_test.go`, Modrinth
+  (facets de modpack), `sqlite` (colunas + settings), contratos `http/modpacks_test.go`
+  (Modrinth e CurseForge falsos). JS: `node --check`.
+- **Testado:** `sudo make check` passou (2026-11-21; o 1º run só pegou a contagem de migrations
+  em `store_test.go`). Picker usa `openDialog({ wide: true })` (`.dialog-wide`, 48rem): o
+  conteúdo de 40rem estourava o diálogo de 32rem e escondia o "Choose…".
+- **Pendente:** roteiro real: pack
+  Modrinth pequeno → start → instalação no console → entrar e colocar bloco → parar → Update →
+  backup + mundo intacto; idem CurseForge com key real.
