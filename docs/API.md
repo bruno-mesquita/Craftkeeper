@@ -749,6 +749,16 @@ server_running|server_busy|curseforge_not_configured` · `422` (same version, in
 
 ## Settings
 
+### `GET /settings/address` — auth
+`200 {"host": "minecraft.example.com"|""}`: the host players use to reach the game servers;
+the UI shows each server as `host:port`. `""` = none saved (the UI falls back to the host the
+panel is browsed on).
+
+### `PUT /settings/address` — auth + CSRF
+Body `{"host"}`: a DNS name or IP address, without scheme or port (≤ 253); trimmed and
+lowercased; `""` clears it. `200` as `GET` · `422 validation_failed`. Audit
+`settings.public_address` (target = new host).
+
 ### `GET /settings/curseforge` — auth
 `200 {"configured": bool, "hint": "last 4 characters"|""}`. The key itself is never returned.
 

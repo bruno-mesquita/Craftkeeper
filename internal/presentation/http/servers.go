@@ -241,3 +241,27 @@ func (a *API) serverAction(op func(context.Context, string, servers.Actor) (serv
 		writeJSON(w, http.StatusOK, toServerDTO(v))
 	}
 }
+
+func (a *API) publicAddress(w http.ResponseWriter, r *http.Request) {
+	host, err := a.servers.PublicHost(r.Context())
+	if err != nil {
+		writeDomainError(w, a.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"host": host})
+}
+
+func (a *API) setPublicAddress(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Host string `json:"host"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	host, err := a.servers.SetPublicHost(r.Context(), req.Host, actorOf(r))
+	if err != nil {
+		writeDomainError(w, a.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"host": host})
+}

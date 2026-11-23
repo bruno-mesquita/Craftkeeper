@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { confirmDialog } from '../dialog.js';
 import { clearFormError, field, formValues, h, showFormError, toast } from '../dom.js';
+import { refreshPublicHost } from '../server-address.js';
 
 export function mount(root, { session }) {
   const button = h('button', { class: 'btn btn-primary self-start', type: 'submit' }, 'Change password');
@@ -38,6 +39,7 @@ export function mount(root, { session }) {
       h('section', { class: 'card max-w-md', 'aria-labelledby': 'pw-title' },
         h('h2', { id: 'pw-title', class: 'mb-4 font-semibold' }, 'Password'),
         form),
+      addressSection(),
       curseForgeSection()));
 }
 
@@ -96,5 +98,40 @@ function curseForgeSection() {
 
   return h('section', { class: 'card max-w-md', 'aria-labelledby': 'cf-title' },
     h('h2', { id: 'cf-title', class: 'mb-4 font-semibold' }, 'CurseForge'),
+    form);
+}
+
+// addressSection stores the host players connect to; the panel shows it with each server's
+// port. Empty means the host the panel is browsed on.
+function addressSection() {
+  const input = h('input', { class: 'input', name: 'host', type: 'text', autocomplete: 'off', maxlength: '253', spellcheck: 'false', placeholder: 'minecraft.example.com' });
+  const save = h('button', { class: 'btn btn-primary self-start', type: 'submit' }, 'Save address');
+  const form = h('form', { class: 'flex flex-col gap-4', novalidate: true },
+    h('p', { class: 'text-sm text-muted' },
+      'The domain or IP players use in Multiplayer. Each server is shown as this host plus its port. Leave empty to use the host this panel is open on.'),
+    field('Host', input),
+    h('p', { class: 'form-error', 'data-error': true, role: 'alert', hidden: true }),
+    save);
+
+  api('GET', '/settings/address').then(({ host }) => { input.value = host; }).catch((err) => showFormError(form, err));
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearFormError(form);
+    save.disabled = true;
+    try {
+      const { host } = await api('PUT', '/settings/address', { host: input.value.trim() });
+      input.value = host;
+      refreshPublicHost();
+      toast(host ? `Public address set to ${host}.` : 'Public address cleared.', 'success');
+    } catch (err) {
+      showFormError(form, err);
+    } finally {
+      save.disabled = false;
+    }
+  });
+
+  return h('section', { class: 'card max-w-md', 'aria-labelledby': 'addr-title' },
+    h('h2', { id: 'addr-title', class: 'mb-4 font-semibold' }, 'Public address'),
     form);
 }

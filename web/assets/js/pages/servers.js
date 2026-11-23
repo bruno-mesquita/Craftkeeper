@@ -7,6 +7,7 @@ import { confirmDialog, openDialog } from '../dialog.js';
 import { clearFormError, field, formValues, h, showFormError, toast } from '../dom.js';
 import { bytes, percent } from '../format.js';
 import { serverIcon } from '../icon-manager.js';
+import { addressCopy } from '../server-address.js';
 import { SOURCES, packIcon, pickModpack } from '../modpack-browser.js';
 import { mountModpackManager } from '../modpack-manager.js';
 import { versionFields } from '../version-fields.js';
@@ -34,7 +35,7 @@ export function mount(root) {
     h('section', { class: 'card overflow-x-auto' },
       h('table', { class: 'w-full text-left' },
         h('thead', { class: 'text-xs text-muted' },
-          h('tr', null, ['Name', 'Status', 'Version', 'Port', 'Limits', 'Usage', h('span', { class: 'sr-only' }, 'Actions')]
+          h('tr', null, ['Name', 'Status', 'Version', 'Address', 'Limits', 'Usage', h('span', { class: 'sr-only' }, 'Actions')]
             .map((c) => h('th', { class: 'pb-2 pr-4 font-medium', scope: 'col' }, c)))),
         tbody),
       empty));
@@ -84,7 +85,8 @@ export function mount(root) {
     const failure = h('span', { class: 'block max-w-xs text-xs text-danger' });
     const status = h('span', { class: 'badge' });
     const version = h('td', { class: 'py-3 pr-4 whitespace-nowrap' });
-    const port = h('td', { class: 'py-3 pr-4 font-mono text-xs' });
+    const addr = addressCopy(0);
+    const port = h('td', { class: 'py-3 pr-4 whitespace-nowrap' }, addr.el);
     const limits = h('td', { class: 'py-3 pr-4 whitespace-nowrap tabular-nums' });
     const use = h('td', { class: 'py-3 pr-4 whitespace-nowrap tabular-nums text-muted' });
     const actions = h('div', { class: 'flex justify-end gap-1' });
@@ -110,7 +112,7 @@ export function mount(root) {
         status.textContent = working ?? st.label;
         status.className = `badge whitespace-nowrap ${working ? 'text-primary border-primary/40' : st.tone}`;
         version.textContent = gameVersion(s);
-        port.textContent = String(s.port);
+        addr.setPort(s.port);
         limits.textContent = `${bytes(s.memory_mb * 1048576)} · ${s.cpu_cores} CPU`;
         const u = usage.get(s.id);
         use.textContent = u && u.state === 'running'

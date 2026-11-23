@@ -113,6 +113,7 @@ func run() error {
 		filesystem.NewServerDirs(cfg.ServersDir(), cfg.BackupsDir(), uid, gid), installersSvc, auditLog, servers.Config{
 			FirstPort: cfg.GamePorts.First, LastPort: cfg.GamePorts.Last,
 			HostCPUs: runtime.NumCPU(), PortFree: hostnet.TCPPortFree, CurseForgeKey: settings.CurseForgeKey,
+			PublicHost: settings.PublicHost, SetPublicHost: settings.SetPublicHost,
 		})
 	// Before serving: forget creations a previous run did not finish. Creations started from
 	// now on run in the background and are interrupted (then recovered) at shutdown.

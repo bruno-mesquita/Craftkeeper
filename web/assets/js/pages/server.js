@@ -17,6 +17,7 @@ import { mountPlayerManager } from '../player-manager.js';
 import { mountPropertiesManager } from '../properties-manager.js';
 import { mountResourcesManager } from '../resources-manager.js';
 import { mountWorldManager } from '../world-manager.js';
+import { addressCopy } from '../server-address.js';
 import { ACTIONS, ACTIVE, STATUS, confirmAction, gameVersion, lifecycleActions, runAction } from '../server-actions.js';
 import * as ws from '../ws.js';
 
@@ -51,6 +52,8 @@ export function mount(root, { param: id }) {
   const headerIcon = serverIcon(id, 'size-12');
   const status = h('span', { class: 'badge' });
   const meta = h('p', { class: 'text-xs text-muted' });
+  let addr = null; // created once the server (and its port) is known
+  const addrSlot = h('div', { class: 'flex items-center gap-1 text-sm' });
   const usage = h('p', { class: 'text-xs text-muted tabular-nums' });
   const actions = h('div', { class: 'flex flex-wrap gap-2' });
   const notice = h('p', { class: 'text-warning', role: 'status', hidden: true });
@@ -204,7 +207,7 @@ export function mount(root, { param: id }) {
         headerIcon.el,
         h('div', { class: 'flex flex-col gap-1' },
           h('div', { class: 'flex flex-wrap items-center gap-3' }, title, status),
-          meta, usage)),
+          addrSlot, meta, usage)),
       actions),
     notice,
     crashNotice,
@@ -237,7 +240,11 @@ export function mount(root, { param: id }) {
     if (!crashNotice.hidden) {
       crashText.textContent = `The server kept crashing (${server.crash.restarts} automatic restarts within 10 minutes), so the panel stopped it at ${new Date(server.crash.at).toLocaleString()}. Check the console and the crash report, fix the cause, then start it again.`;
     }
-    meta.textContent = `Minecraft ${gameVersion(server)} · port ${server.port} · ${bytes(server.memory_mb * 1048576)} · ${server.cpu_cores} CPU`;
+    if (!addr) {
+      addr = addressCopy(server.port);
+      addrSlot.replaceChildren(addr.el);
+    } else addr.setPort(server.port);
+    meta.textContent = `Minecraft ${gameVersion(server)} · ${bytes(server.memory_mb * 1048576)} · ${server.cpu_cores} CPU`;
     actions.replaceChildren(...lifecycleActions(server.status).map((a) =>
       h('button', { class: `btn ${a === 'start' ? 'btn-primary' : 'btn-ghost'}`, type: 'button', disabled: Boolean(busy), onclick: () => act(a) },
         ACTIONS[a].label)));

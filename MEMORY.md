@@ -3,7 +3,7 @@
 Registro vivo de fatos do host, decisões arquiteturais e estado do projeto.
 Atualizar sempre que algo aqui mudar. Spec completa: [`docs/SPEC.md`](docs/SPEC.md).
 
-Última atualização: **2026-11-21**
+Última atualização: **2026-11-23**
 
 ---
 
@@ -101,6 +101,7 @@ Formato: decisão — motivo — consequência.
 - **D70 · Deploy por script local `sudo make deploy`** (escolha do usuário, 2026-11-20) — repo público: runner self-hosted rodaria código de PR na produção; push pelo CI exigiria chave root no GitHub. — `deployments/deploy.sh` só faz upgrade (recusa sem root/unit/binário): `make check` (falha → nada muda) → stop → backup frio do SQLite + binário em `/var/backups/craftkeeper/<UTC>-<rev>/` (5 mais novos) → install → start → `/api/v1/health` por 30 s → senão rollback de binário **e** banco + `journalctl`. `SKIP_BUILD=1`, `HEALTH_URL`. Saída em `.cache/deploy.log`. Primeira instalação segue manual (INSTALL.md §1–8b, autorização).
 - **D71 · Modpacks de catálogo instalados pelo itzg** (pedido do usuário, 2026-11-21: Modrinth + CurseForge, só na criação, update preservando o mundo) — a imagem já instala e atualiza packs (`TYPE=MODRINTH` + `MODRINTH_MODPACK`/`MODRINTH_VERSION`; `TYPE=AUTO_CURSEFORGE` + `CF_API_KEY`/`CF_SLUG`/`CF_FILE_ID`, `CF_DOWNLOADS_REPO=/data/downloads` para mods bloqueados) e, ao trocar a versão, remove só os arquivos do pack antigo (mundo nunca). — O painel só lê metadados: `domain.ModpackRef` no servidor (migration `0007`), loader/MC vindos do catálogo (só fabric/forge/neoforge em release, `ModpackGame`), `loader_version` vazio. Update = `maintenance.ChangeModpack` (parado + `backups.Protect` sempre) → `servers.ChangeModpack` (recria via `replaceContainer`/`swapContainer`, D60). Servidor de pack: sem aba Mods/`POST /version` (`modpack_server`). Nomes das env vars conferidos na doc do itzg (2026-11-21).
 - **D72 · API key do CurseForge em Settings** (escolha do usuário, 2026-11-21) — busca/instalação no CurseForge exige key. — Tabela `settings` (`curseforge_api_key`, `sqlite.Settings`), validada com `GET /v1/games/432` antes de gravar; API devolve só `configured` + 4 últimos chars; vai no env do container (`servers.Config.CurseForgeKey`). Trocar/remover a key só afeta containers recriados depois. Novo cliente `infrastructure/curseforge` (sem dependência nova).
+- **D73 · Host público de conexão como setting** (2026-11-23) — painel é aberto pelo IP Tailscale; jogadores usam o domínio. — `settings.public_host`, `GET/PUT /settings/address`; UI mostra `host:porta` com copiar (fallback `location.hostname`). Detalhes na seção "Endereço de conexão".
 
 ---
 
@@ -523,3 +524,19 @@ Plano: `~/.claude/plans/eu-preciso-de-um-cached-patterson-of-02e2661f-61c7-47db-
 - **Pendente:** roteiro real: pack
   Modrinth pequeno → start → instalação no console → entrar e colocar bloco → parar → Update →
   backup + mundo intacto; idem CurseForge com key real.
+
+## Endereço de conexão (2026-11-23)
+
+Plano: `~/.claude/plans/vamos-add-um-lugar-expressive-waffle-of-f05f9b11-223e-40f5-befa-ea709cd876dc.md`.
+- **D73 (detalhes)** — Chave `public_host` na tabela `settings` (sem
+  migration), `GET/PUT /settings/address` em `servers.Service` (funcs no `servers.Config`, como
+  `CurseForgeKey`), audit `settings.public_address`. UI compõe `host:porta` (IPv6 entre
+  colchetes, `:25565` omitido); sem host salvo usa `location.hostname`. Sem SRV/DNS.
+- **Implementado:** `domain/address.go` (`ValidatePublicHost`, `NormalizePublicHost`),
+  `sqlite.Settings` (helpers `get`/`set` comuns), `servers/address.go`, handlers em
+  `http/servers.go`. Frontend: `server-address.js` (`addressCopy` com fallback `execCommand`
+  fora de contexto seguro), cabeçalho do servidor, coluna "Address" na lista, seção
+  "Public address" em Settings, rótulo no Activity, ícone `copy`. Sem classes CSS novas.
+- **Testes escritos:** `domain/address_test.go`, `sqlite/settings_test.go`
+  (`TestSettingsPublicHost`), contrato `TestPublicAddressContract`. JS: `node --check` ok.
+- **Testado:** `go test ./...` passou (2026-11-23); conferido pelo usuário ("td certo").

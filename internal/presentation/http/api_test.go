@@ -113,7 +113,7 @@ func newServerWith(t *testing.T, containers monitoring.ContainerCollector) *clie
 	settings := sqlite.NewSettings(store)
 	serversSvc := servers.NewService(sqlite.NewServers(store), rt, filesystem.NewServerDirs(serversDir, backupsDir, os.Getuid(), os.Getgid()),
 		installersSvc, audit, servers.Config{FirstPort: 25601, LastPort: 25700, HostCPUs: 4, PortFree: func(int) bool { return true },
-			CurseForgeKey: settings.CurseForgeKey})
+			CurseForgeKey: settings.CurseForgeKey, PublicHost: settings.PublicHost, SetPublicHost: settings.SetPublicHost})
 	t.Cleanup(serversSvc.Close)
 	serverFiles := filesystem.NewServerFiles(serversDir, os.Getuid(), os.Getgid())
 	backupsSvc := backups.NewService(sqlite.NewBackups(store), filesystem.NewBackups(backupsDir, serverFiles),

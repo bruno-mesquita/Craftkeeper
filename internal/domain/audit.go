@@ -74,6 +74,8 @@ const (
 	AuditModpackUpdate = "modpack.update"
 	// AuditCurseForgeKey records saving ("set") or removing ("removed") the CurseForge API key.
 	AuditCurseForgeKey = "settings.curseforge_key"
+	// AuditPublicAddress records changing the public host; the target is the new host ("" = cleared).
+	AuditPublicAddress = "settings.public_address"
 )
 
 // AuditActions lists every action, in display order. Filters only accept these.
@@ -82,7 +84,7 @@ var AuditActions = []string{
 	AuditServerCreate, AuditServerUpdate, AuditServerStart, AuditServerStop, AuditServerRestart,
 	AuditServerKill, AuditServerDelete, AuditServerCrashLoop, AuditServerVersionChange, AuditServerMigrate, AuditConsoleCommand,
 	AuditWorldReset, AuditWorldImport,
-	AuditContainerDelete, AuditModpackConfigure, AuditModpackInstall, AuditModpackUpdate, AuditCurseForgeKey,
+	AuditContainerDelete, AuditModpackConfigure, AuditModpackInstall, AuditModpackUpdate, AuditCurseForgeKey, AuditPublicAddress,
 	AuditFileUpload, AuditFileWrite, AuditFileMkdir, AuditFileRename, AuditFileDelete, AuditFileExtract,
 	AuditBackupCreate, AuditBackupRestore, AuditBackupDelete, AuditBackupSchedule,
 	AuditWhitelistToggle, AuditWhitelistAdd, AuditWhitelistRemove,

@@ -82,6 +82,8 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/servers/{id}/stop", a.requireAuth(a.withServerID(a.serverAction(a.servers.Stop))))
 	mux.HandleFunc("POST /api/v1/servers/{id}/restart", a.requireAuth(a.withServerID(a.serverAction(a.servers.Restart))))
 	mux.HandleFunc("POST /api/v1/servers/{id}/kill", a.requireAuth(a.withServerID(a.serverAction(a.servers.Kill))))
+	mux.HandleFunc("GET /api/v1/settings/address", a.requireAuth(a.publicAddress))
+	mux.HandleFunc("PUT /api/v1/settings/address", a.requireAuth(a.setPublicAddress))
 
 	fileRoute := func(h http.HandlerFunc) http.HandlerFunc { return a.requireAuth(a.withServerID(h)) }
 	mux.HandleFunc("GET /api/v1/servers/{id}/files", fileRoute(a.listFiles))

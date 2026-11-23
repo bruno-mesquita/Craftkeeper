@@ -23,6 +23,11 @@ type Config struct {
 	// CurseForgeKey returns the stored CurseForge API key ("" when none). Containers of
 	// CurseForge modpacks get it in their environment.
 	CurseForgeKey func(ctx context.Context) (string, error)
+
+	// PublicHost and SetPublicHost read and store the host players use to reach the game
+	// servers ("" = none; the panel then shows the host it is browsed on).
+	PublicHost    func(ctx context.Context) (string, error)
+	SetPublicHost func(ctx context.Context, host string) error
 }
 
 // View is a server with its current status.

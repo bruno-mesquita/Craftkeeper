@@ -302,3 +302,40 @@ func TestServerErrors(t *testing.T) {
 	res, body = c.do("POST", "/api/v1/servers/"+id+"/start", nil, nil)
 	expect(t, res, body, http.StatusServiceUnavailable, "docker_unavailable")
 }
+
+func TestPublicAddressContract(t *testing.T) {
+	c := newServer(t)
+	c.setupAndLogin()
+
+	res, body := c.do("GET", "/api/v1/settings/address", nil, nil)
+	expect(t, res, body, http.StatusOK, "")
+	if body["host"] != "" {
+		t.Fatalf("unset = %v", body)
+	}
+	csrf := c.csrf
+	c.csrf = ""
+	res, body = c.do("PUT", "/api/v1/settings/address", map[string]string{"host": "play.example.com"}, nil)
+	expect(t, res, body, http.StatusForbidden, "csrf_invalid")
+	c.csrf = csrf
+	res, body = c.do("PUT", "/api/v1/settings/address", map[string]string{"host": "play.example.com:25565"}, nil)
+	expect(t, res, body, http.StatusUnprocessableEntity, "validation_failed")
+
+	res, body = c.do("PUT", "/api/v1/settings/address", map[string]string{"host": "  Play.Example.com "}, nil)
+	expect(t, res, body, http.StatusOK, "")
+	if body["host"] != "play.example.com" {
+		t.Fatalf("saved = %v", body)
+	}
+	res, body = c.do("GET", "/api/v1/settings/address", nil, nil)
+	expect(t, res, body, http.StatusOK, "")
+	if body["host"] != "play.example.com" {
+		t.Fatalf("after save = %v", body)
+	}
+	expectAudited(t, c, "settings.public_address")
+
+	res, body = c.do("PUT", "/api/v1/settings/address", map[string]string{"host": ""}, nil)
+	expect(t, res, body, http.StatusOK, "")
+	res, body = c.do("GET", "/api/v1/settings/address", nil, nil)
+	if body["host"] != "" {
+		t.Fatalf("after clear = %v", body)
+	}
+}
